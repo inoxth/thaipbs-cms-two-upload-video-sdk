@@ -29,6 +29,7 @@ const cms = () => {
 
 // ── main flow: one click runs upload → create media → create video ──────────────────
 let busy = false;
+let lastVideoKey = null;   // the most recent upload, so "Refresh player" can re-check it
 async function handleUpload() {
   if (busy) return;
   const file = $('file').files[0];
@@ -55,8 +56,8 @@ async function handleUpload() {
     $('bar').value = 100;
     log('video key: ' + videoKey);
     setStatus(t('status.uploaded'), 'ok');
+    lastVideoKey = videoKey; $('refresh').disabled = false;   // enable manual refresh
     saveHistory();                // creds worked — remember them for next time
-    showPreview('local', file);   // preview the local file right away (ByteArk is still transcoding)
 
     // STEP 2a — register the media-video in the library (this is what the webhook updates)
     setStatus(t('status.creatingMedia'));
@@ -64,12 +65,11 @@ async function handleUpload() {
 
     // STEP 2b — create the Video record from that media (title / description / program)
     setStatus(t('status.creatingVideo'));
-    const video = await api.createVideo(cms(), { media, teamId, title, tagline: description, programId });
+    await api.createVideo(cms(), { media, teamId, title, tagline: description, programId });
     setStatus(t('status.done'), 'ok');
 
-    // Wait for ByteArk's webhook to flip mediaVideoStatus to completed, then show the player.
-    const embeddedUrl = media?.embeddedUrl || video?.mediaVideo?.embeddedUrl;
-    if ($('auto').checked && embeddedUrl) whenReadyShowPlayer(videoKey, embeddedUrl);
+    // Poll CMS-Two until the video is ready, then show the player from the API response.
+    if ($('auto').checked) whenReadyShowPlayer(videoKey);
   } catch (err) {
     setStatus(t('status.error'), 'err'); log(String(err));
   } finally {
@@ -78,34 +78,51 @@ async function handleUpload() {
 }
 $('go').addEventListener('click', handleUpload);
 
-// ── preview box: one of three states ────────────────────────────────────────────────
-function showPreview(state, arg) {
-  const video = $('previewVideo'), frame = $('previewFrame'), empty = $('previewEmpty');
-  video.style.display = frame.style.display = empty.style.display = 'none';
-  if (state === 'local') {         // <video> playing the local file
-    video.src = URL.createObjectURL(arg); video.style.display = 'block';
-  } else if (state === 'embed') {  // <iframe> ByteArk player from the CMS-Two embeddedUrl
-    frame.src = arg; frame.style.display = 'block';
-  } else {                          // 'empty' placeholder
-    video.removeAttribute('src'); frame.src = '';
-    empty.style.display = 'flex';
+// ── preview box: placeholder ('empty'/'processing'), or the CMS-Two player ('embed') ──
+function showPreview(state, url) {
+  const frame = $('previewFrame'), empty = $('previewEmpty');
+  if (state === 'embed') {          // <iframe> player from the CMS-Two embeddedUrl
+    frame.src = url; frame.style.display = 'block'; empty.style.display = 'none';
+  } else {                          // 'empty' | 'processing' — show the placeholder box
+    frame.src = ''; frame.style.display = 'none'; empty.style.display = 'flex';
+    empty.textContent = t(state === 'processing' ? 'preview.processing' : 'preview.empty');
   }
 }
 
-// Poll the media-video until ByteArk finishes transcoding, then show the player.
-async function whenReadyShowPlayer(videoKey, embeddedUrl) {
-  for (let i = 0; i < 40; i++) {                     // ~10 min max, checking every 15s
-    await new Promise((r) => setTimeout(r, 15000));
-    const status = (await api.getMediaVideoByKey(cms(), videoKey))?.mediaVideoStatus;
-    setStatus(t('status.transcoding', status));
+// Check the video every 5s; show "processing" until mediaVideoStatus is completed, then play
+// the CMS-Two player using the embeddedUrl from that same GET response.
+async function whenReadyShowPlayer(videoKey) {
+  while (true) {
+    const media = await api.getMediaVideoByKey(cms(), videoKey);
+    const status = media?.mediaVideoStatus;
     if (status === 'completed') {
-      showPreview('embed', embeddedUrl);
+      showPreview('embed', media.embeddedUrl);
       setStatus(t('status.ready'), 'ok');
       return;
     }
+    if (status === 'failed') { setStatus(t('status.failed'), 'err'); return; }
+    showPreview('processing');                            // box shows "Video is processing…"
+    setStatus(t('status.processing', status), 'info');   // pending/processing — keep waiting
+    // ponytail: unbounded poll until completed/failed, per request. Close the tab to stop.
+    await new Promise((r) => setTimeout(r, 5000));        // check again in 5s
   }
-  setStatus(t('status.stillTranscoding'), 'info');
 }
+
+// Refresh player: re-fetch the latest video from CMS-Two and show the player if it's ready.
+$('refresh').addEventListener('click', async () => {
+  if (!lastVideoKey) return;
+  const btn = $('refresh'); btn.disabled = true;
+  try {
+    const media = await api.getMediaVideoByKey(cms(), lastVideoKey);
+    if (media?.mediaVideoStatus === 'completed') {
+      showPreview('embed', media.embeddedUrl);
+      setStatus(t('status.ready'), 'ok');
+    } else {
+      showPreview('processing');
+      setStatus(t('status.processing', media?.mediaVideoStatus), 'info');
+    }
+  } finally { btn.disabled = false; }
+});
 
 // ── program dropdown ────────────────────────────────────────────────────────────────
 $('loadPrograms').addEventListener('click', async () => {

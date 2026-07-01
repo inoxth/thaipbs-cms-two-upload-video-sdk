@@ -121,3 +121,5 @@ pre { background: #0f172a; color: #cbd5e1; border-radius: var(--radius-lg); padd
   overflow: auto; max-height: 300px; white-space: pre-wrap; word-break: break-word;
   font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace; margin: 0; }
 .section-title { font-size: .95rem; font-weight: 600; margin: 1.5rem 0 .6rem; }
+.preview-head { display: flex; align-items: center; justify-content: space-between; }
+.preview-head .section-title { margin-bottom: .6rem; }

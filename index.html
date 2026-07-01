@@ -47,8 +47,8 @@
       <div class="row">
         <div><label data-i18n="label.baseUrl">Base URL</label>
           <select id="cmsBase">
+            <option value="" data-i18n="opt.staging" selected>Staging — via local proxy (run proxy.mjs)</option>
             <option value="http://localhost:3000" data-i18n="opt.local">Local dev — http://localhost:3000</option>
-            <option value="" data-i18n="opt.staging">Staging — via local proxy (run proxy.mjs)</option>
           </select>
         </div>
         <div><label data-i18n="label.teamId">Team ID</label><input id="teamId" placeholder="team ObjectId" /></div>
@@ -87,13 +87,15 @@
     <progress id="bar" value="0" max="100" hidden></progress>
     <div><span id="status"></span></div>
 
-    <div class="section-title" data-i18n="section.preview">Preview</div>
+    <div class="preview-head">
+      <span class="section-title" data-i18n="section.preview">Preview</span>
+      <button type="button" id="refresh" class="btn-ghost" data-i18n="btn.refresh" disabled>Refresh player</button>
+    </div>
     <div class="frame">
-      <video id="previewVideo" controls style="background:#000;display:none"></video>
       <iframe id="previewFrame" allow="autoplay; fullscreen" allowfullscreen style="display:none"></iframe>
       <div id="previewEmpty" class="empty" data-i18n="preview.empty">No video yet — upload one to preview</div>
     </div>
-    <p class="hint" data-i18n="hint.preview">Plays your local file immediately; swaps to the CMS-Two player once the video is ready.</p>
+    <p class="hint" data-i18n="hint.preview">The CMS-Two player appears here once the video is ready.</p>
 
     <div class="section-title" data-i18n="section.log">Log</div>
     <pre id="log" data-i18n="log.ready">Ready.</pre>

@@ -24,6 +24,12 @@ body {
 }
 .wrap { max-width: 760px; margin: 0 auto; }
 
+/* language switcher */
+.lang { display: flex; gap: .3rem; justify-content: flex-end; margin-bottom: .5rem; }
+.lang button { padding: .25rem .55rem; font-size: .75rem; font-weight: 600; border-radius: 999px;
+  background: #fff; border: 1px solid var(--border); color: var(--muted); }
+.lang button.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+
 /* header */
 header { margin-bottom: 1.5rem; }
 .kicker { display: inline-block; font-size: .72rem; font-weight: 600; letter-spacing: .08em;

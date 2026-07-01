@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Upload video — ByteArk Stream + CMS-Two</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="kicker">Integration demo</span>
+      <h1>Upload a video to ByteArk Stream + CMS-Two</h1>
+      <p>Two systems working together — the video file and its metadata live in different places.</p>
+    </header>
+
+    <!-- the split, at a glance -->
+    <div class="flow">
+      <div class="node"><b>ByteArk Stream</b><span>Stores the real video file (VOD)</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>CMS-Two</b><span>Stores metadata + a <code>videoKey</code> reference</span></div>
+    </div>
+
+    <!-- 1. ByteArk credentials (from the ByteArk Stream dashboard) -->
+    <section class="card">
+      <h2><span class="num">1</span> ByteArk Stream</h2>
+      <div class="row">
+        <div><label>Form ID</label><input id="formId" placeholder="form id" /></div>
+        <div><label>Form Secret</label><input id="formSecret" placeholder="form secret" /></div>
+      </div>
+      <div class="row">
+        <div><label>Project Key</label><input id="projectKey" placeholder="project key" /></div>
+        <div><label>Service Endpoint</label><input id="serviceEndpoint" value="https://stream.byteark.com" /></div>
+      </div>
+    </section>
+
+    <!-- 2. CMS-Two target -->
+    <section class="card">
+      <h2><span class="num">2</span> CMS-Two</h2>
+      <div class="row">
+        <div><label>Base URL</label>
+          <select id="cmsBase">
+            <option value="http://localhost:3000">Local dev — http://localhost:3000</option>
+            <option value="">Staging — via local proxy (run proxy.mjs)</option>
+          </select>
+        </div>
+        <div><label>Team ID</label><input id="teamId" placeholder="team ObjectId" /></div>
+      </div>
+      <label>API secret <span style="font-weight:400;color:var(--muted)">(only for staging — the env <code>API_SERVER_SECRET</code>)</span></label>
+      <div class="secret-field">
+        <input id="apiSecret" type="password" placeholder="leave blank for local dev" />
+        <button type="button" id="toggleSecret" class="eye" aria-label="Show secret" title="Show / hide">
+          <svg class="i-show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="i-hide" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
+      <p class="hint">Sent as the <code>x-api-server-secret</code> header (server-to-server auth). Local <code>localhost:3000</code> auto-authenticates, so leave this blank there.</p>
+    </section>
+
+    <!-- 3. Video: fill everything, pick the file, then Upload -->
+    <section class="card">
+      <h2><span class="num">3</span> Video details</h2>
+      <label>Program <span style="font-weight:400;color:var(--muted)">(optional — links the video to a program)</span></label>
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:1 1 100%"><select id="program"><option value="">— none —</option></select></div>
+        <button type="button" id="loadPrograms" class="btn-ghost">Load programs</button>
+      </div>
+      <label>Title</label><input id="title" placeholder="video title" />
+      <label>Description</label><input id="description" placeholder="video description" />
+      <label>Video file</label><input id="file" type="file" accept="video/*" />
+      <p class="hint">One click: uploads to ByteArk → registers the media in the library → creates the video record.</p>
+    </section>
+
+    <label class="toggle">
+      <input type="checkbox" id="auto" checked />
+      Auto-refresh the preview to the ByteArk player once transcoding finishes
+    </label>
+    <button id="go" class="btn-primary">Upload video</button>
+
+    <progress id="bar" value="0" max="100" hidden></progress>
+    <div><span id="status"></span></div>
+
+    <div class="section-title">Preview</div>
+    <div class="frame">
+      <video id="previewVideo" controls style="background:#000;display:none"></video>
+      <iframe id="previewFrame" allow="autoplay; fullscreen" allowfullscreen style="display:none"></iframe>
+      <div id="previewEmpty" class="empty">No video yet — upload one to preview</div>
+    </div>
+    <p class="hint">Plays your local file immediately; swaps to the ByteArk player (CMS-Two <code>embeddedUrl</code>) once the VOD finishes transcoding.</p>
+
+    <div class="section-title">Log</div>
+    <pre id="log">Ready.</pre>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

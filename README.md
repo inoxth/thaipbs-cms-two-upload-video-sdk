@@ -6,8 +6,11 @@ A standalone demo of the two-step video flow:
 2. **CMS-Two** — save the metadata + that `videoKey` reference via `POST /api/v1/videos`.
 
 ## Files
-- `byteark-upload-demo.html` — the demo page (all UI + logic, no build step; SDK loaded from a CDN).
-- `proxy.mjs` — a tiny Node server that serves the page **and** proxies `/api/*` to a CMS-Two
+- `index.html` — markup only (the form + preview + log).
+- `styles.css` — all styling (CMS-Two design tokens).
+- `api.js` — network layer: the ByteArk SDK upload + every CMS-Two REST call. No DOM.
+- `app.js` — UI wiring: reads the form, calls `api.js`, updates preview/status/log/history.
+- `proxy.mjs` — a tiny Node server that serves the files **and** proxies `/api/*` to a CMS-Two
   environment. The proxy exists so the browser can call **staging** without CORS errors: the page
   calls the proxy same-origin, and the proxy forwards server-to-server (where CORS doesn't apply),
   passing the `x-api-server-secret` auth header.
@@ -18,7 +21,7 @@ A standalone demo of the two-step video flow:
 node proxy.mjs
 ```
 
-Then open http://localhost:8899/byteark-upload-demo.html
+Then open http://localhost:8899/
 
 Config via env (optional):
 

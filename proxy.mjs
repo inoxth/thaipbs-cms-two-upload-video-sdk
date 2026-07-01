@@ -54,11 +54,13 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // Otherwise serve the demo page (only file this dir needs to expose).
-  const path = req.url === '/' ? '/byteark-upload-demo.html' : req.url.split('?')[0];
+  // Otherwise serve a static file (index.html, styles.css, app.js, api.js).
+  const path = req.url === '/' ? '/index.html' : req.url.split('?')[0];
+  const ext = path.slice(path.lastIndexOf('.'));
+  const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.svg': 'image/svg+xml' };
   try {
     const file = await readFile(join(HERE, path));
-    res.writeHead(200, { 'content-type': path.endsWith('.html') ? 'text/html' : 'text/plain' });
+    res.writeHead(200, { 'content-type': MIME[ext] || 'text/plain' });
     res.end(file);
   } catch {
     res.writeHead(404); res.end('Not found');

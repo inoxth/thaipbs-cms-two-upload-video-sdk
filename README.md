@@ -13,7 +13,7 @@ const uploadManager = new CmsTwoSdk({
 
   // Callback functions (all optional)
   onUploadProgress: (job, progress) => console.log(job.name, progress.percent + '%'),
-  onUploadCompleted: (job) => console.log('created in Thai PBS Video CMS:', job.videoKey),
+  onUploadCompleted: (job) => console.log('created in Thai PBS Video CMS:', job.video.id),
   onUploadFailed: (job, error) => console.error(job.name, error),
   onVideosCreated: (videoKeys) => console.log('all done:', videoKeys),
 });
@@ -32,7 +32,7 @@ Single-file shortcut — `upload()` returns an awaitable job handle:
 ```js
 const myVideo = uploadManager.upload(file, { title: 'My video' });
 myVideo.onProgress((pct) => console.log(pct + '%'));
-const { videoKey } = await myVideo;        // records created
+const { video } = await myVideo;           // Thai PBS Video CMS video record created
 const ready = await myVideo.whenReady();   // playable (ready.mediaVideo.embeddedUrl)
 ```
 

@@ -109,7 +109,7 @@
   byteark: { formId, formSecret, projectKey },
   cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' },
   onUploadProgress: (job, progress) =&gt; console.log(progress.percent + '%'),
-  onUploadCompleted: (job) =&gt; console.log('created:', job.videoKey),
+  onUploadCompleted: (job) =&gt; console.log('created:', job.video.id),
 });</code></pre>
 
         <h3 class="step"><span class="num">2</span> Add the file(s) to the queue</h3>
@@ -119,7 +119,7 @@
         <h3 class="step"><span class="num">3</span> Start uploading</h3>
         <p>Runs the queue and creates the Thai PBS Video CMS records. Resolves when every job is done.</p>
 <pre class="code" data-lang="javascript"><code>const [job] = await uploadManager.start();
-console.log(job.videoKey);   // the created video's key</code></pre>
+console.log(job.video.id);   // the Thai PBS Video CMS video id</code></pre>
 
         <h3 class="step"><span class="num">4</span> Wait until it's playable</h3>
         <p>The file keeps processing after upload — poll until <code>completed</code>, then use <code>embeddedUrl</code>.</p>
@@ -159,7 +159,7 @@ player.src = video.mediaVideo.embeddedUrl;</code></pre>
   byteark: { formId, formSecret, projectKey },
   cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' },
   onUploadProgress: (job, progress) =&gt; console.log(job.name, progress.percent + '%'),
-  onUploadCompleted: (job) =&gt; console.log('created:', job.videoKey),
+  onUploadCompleted: (job) =&gt; console.log('created:', job.video.id),
   onUploadFailed: (job, error) =&gt; console.error(job.name, error),
   onVideosCreated: (videoKeys) =&gt; console.log('all done:', videoKeys),
 });</code></pre>
@@ -219,15 +219,15 @@ const ok = jobs.filter((j) =&gt; j.status === 'completed');</code></pre>
             <tr><td><code>.onProgress(fn)</code></td><td>Register a <code>(percent) =&gt; void</code> callback. Chainable.</td></tr>
             <tr><td><code>.onStatus(fn)</code></td><td>Register a <code>(phase) =&gt; void</code> callback. Chainable.</td></tr>
             <tr><td><code>await handle</code></td><td>Resolves to <code>{ videoKey, media, video }</code> once the records exist.</td></tr>
-            <tr><td><code>.whenReady({ intervalMs })</code></td><td>Polls until the video is playable; resolves with the media (has <code>embeddedUrl</code>). Default interval 5000ms.</td></tr>
+            <tr><td><code>.whenReady({ intervalMs })</code></td><td>Polls until the video is playable; resolves with the Thai PBS Video CMS video (<code>embeddedUrl</code> under <code>video.mediaVideo</code>). Default interval 5000ms.</td></tr>
           </tbody>
         </table>
 <pre class="code" data-lang="javascript"><code>const myVideo = uploadManager.upload(file, { title: 'My video' });
 myVideo.onProgress((pct) =&gt; console.log(pct + '%'));
 
-const { videoKey } = await myVideo;        // records created
-const ready = await myVideo.whenReady();   // playable
-player.src = ready.embeddedUrl;</code></pre>
+const { video } = await myVideo;           // Thai PBS Video CMS video record created
+const ready = await myVideo.whenReady();   // playable video (from Thai PBS Video CMS)
+player.src = ready.mediaVideo.embeddedUrl;</code></pre>
       </section>
 
       <!-- getVideoById -->
@@ -266,7 +266,7 @@ player.src = ready.embeddedUrl;</code></pre>
             <tr><td><code>liveBoardcastingStatus</code> / <code>…Mode</code></td><td>string | null</td><td>Live-broadcast state.</td></tr>
             <tr><td><code>ogTitle</code> / <code>ogDescription</code> / <code>seoTitle</code> / <code>seoDescription</code></td><td>string</td><td>SEO / social metadata.</td></tr>
             <tr><td><code>terms</code></td><td>object</td><td>Custom-field term values (<code>Record&lt;string, unknown&gt;</code>).</td></tr>
-            <tr><td><code>additionalFields</code></td><td>object[]</td><td>Custom fields — <code>{ key, value }</code>.</td></tr>
+            <tr><td><code>additionalFields</code></td><td>object</td><td>Custom-field values (<code>Record&lt;string, unknown&gt;</code>).</td></tr>
             <tr><td><code>relatedTerms</code></td><td>object[]</td><td>Taxonomy attachments — <code>{ key, docId }</code>.</td></tr>
             <tr><td><code>program</code> / <code>season</code></td><td>object | null</td><td><code>{ id, title, slugCode, type, skipIntroToSeconds }</code>.</td></tr>
             <tr><td><code>episode</code> / <code>gallery</code></td><td>object | null</td><td>Populated relations.</td></tr>
@@ -274,7 +274,6 @@ player.src = ready.embeddedUrl;</code></pre>
             <tr><td><code>creator</code> / <code>updater</code></td><td>Account | null</td><td>Populated accounts.</td></tr>
             <tr><td><code>legacyId</code></td><td>string | null</td><td>Legacy CMS id.</td></tr>
             <tr><td><code>canonicalUrl</code> / <code>previewUrl</code></td><td>string</td><td>Public URLs (when set).</td></tr>
-            <tr><td><code>deleted</code> / <code>deletedAt</code></td><td>boolean / string</td><td>Soft-delete flags.</td></tr>
             <tr><td><code>createdAt</code> / <code>updatedAt</code></td><td>string</td><td>ISO timestamps.</td></tr>
           </tbody>
         </table>

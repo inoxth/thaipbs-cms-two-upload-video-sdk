@@ -33,7 +33,7 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
 
     const myVideo = uploadManager.upload(file, { title: 'My video' });
     myVideo.onProgress((pct) => console.log(pct + '%'));
-    const { videoKey } = await myVideo;          // records created
+    const { video } = await myVideo;             // Thai PBS Video CMS video record created
     const ready = await myVideo.whenReady();     // playable (ready.mediaVideo.embeddedUrl)
 
   `file` is a File object (from an <input type="file"> or drag-and-drop) — browsers can't

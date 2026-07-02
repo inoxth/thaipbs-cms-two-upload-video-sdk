@@ -148,9 +148,9 @@ player.src = video.mediaVideo.embeddedUrl;</code></pre>
             <tr><td><code>byteark</code></td><td>object</td><td><code>{ formId, formSecret, projectKey }</code> — upload form credentials.</td></tr>
             <tr><td><code>cms</code></td><td>object</td><td><code>{ baseUrl, apiSecret?, log? }</code>. <code>apiSecret</code> is optional on local (auto-auth), required elsewhere. <code>log</code> is an optional <code>(msg) =&gt; void</code>.</td></tr>
             <tr><td><code>onUploadProgress</code></td><td>function</td><td><code>(job, progress)</code> — a job's upload progressed. <code>progress = { percent }</code>.</td></tr>
-            <tr><td><code>onUploadCompleted</code></td><td>function</td><td><code>(job)</code> — a job's Thai PBS Video CMS records now exist (<code>job.videoKey</code>, <code>job.media</code>, <code>job.video</code>).</td></tr>
+            <tr><td><code>onUploadCompleted</code></td><td>function</td><td><code>(job)</code> — a job's Thai PBS Video CMS records now exist (<code>job.media</code>, <code>job.video</code>).</td></tr>
             <tr><td><code>onUploadFailed</code></td><td>function</td><td><code>(job, error)</code> — a job failed; the queue continues with the next one.</td></tr>
-            <tr><td><code>onVideosCreated</code></td><td>function</td><td><code>(videoKeys)</code> — fired once after <code>start()</code> drains the queue, with every created key.</td></tr>
+            <tr><td><code>onVideosCreated</code></td><td>function</td><td><code>(videoIds)</code> — fired once after <code>start()</code> drains the queue, with every created Thai PBS Video CMS video id.</td></tr>
             <tr><td><code>onStatus</code></td><td>function</td><td><code>(job, phase)</code> — phase is <code>'uploading' | 'creating-media' | 'creating-video'</code>.</td></tr>
           </tbody>
         </table>
@@ -161,7 +161,7 @@ player.src = video.mediaVideo.embeddedUrl;</code></pre>
   onUploadProgress: (job, progress) =&gt; console.log(job.name, progress.percent + '%'),
   onUploadCompleted: (job) =&gt; console.log('created:', job.video.id),
   onUploadFailed: (job, error) =&gt; console.error(job.name, error),
-  onVideosCreated: (videoKeys) =&gt; console.log('all done:', videoKeys),
+  onVideosCreated: (videoIds) =&gt; console.log('all done:', videoIds),
 });</code></pre>
       </section>
 
@@ -218,7 +218,7 @@ const ok = jobs.filter((j) =&gt; j.status === 'completed');</code></pre>
           <tbody>
             <tr><td><code>.onProgress(fn)</code></td><td>Register a <code>(percent) =&gt; void</code> callback. Chainable.</td></tr>
             <tr><td><code>.onStatus(fn)</code></td><td>Register a <code>(phase) =&gt; void</code> callback. Chainable.</td></tr>
-            <tr><td><code>await handle</code></td><td>Resolves to <code>{ videoKey, media, video }</code> once the records exist.</td></tr>
+            <tr><td><code>await handle</code></td><td>Resolves to <code>{ media, video }</code> once the records exist.</td></tr>
             <tr><td><code>.whenReady({ intervalMs })</code></td><td>Polls until the video is playable; resolves with the Thai PBS Video CMS video (<code>embeddedUrl</code> under <code>video.mediaVideo</code>). Default interval 5000ms.</td></tr>
           </tbody>
         </table>
@@ -321,7 +321,6 @@ const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
             <tr><td><code>title</code> / <code>description</code> / <code>programId</code></td><td>string</td><td>Metadata for the video record.</td></tr>
             <tr><td><code>status</code></td><td>string</td><td><code>'pending' → 'uploading' → 'creating-media' → 'creating-video' → 'completed'</code> (or <code>'failed'</code>).</td></tr>
             <tr><td><code>progress</code></td><td>object</td><td><code>{ percent }</code> — upload progress.</td></tr>
-            <tr><td><code>videoKey</code></td><td>string</td><td>The key from the media service (set after upload).</td></tr>
             <tr><td><code>media</code> / <code>video</code></td><td>object</td><td>The created Thai PBS Video CMS records (set after each step).</td></tr>
           </tbody>
         </table>
@@ -335,9 +334,9 @@ const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
         <table class="params">
           <thead><tr><th>Function</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>uploadVideo(options)</code></td><td>One-shot: upload + create media + create video. Returns <code>{ videoKey, media, video }</code>. Same options as the constructor plus <code>file</code>, <code>title</code>, <code>description</code>, <code>programId</code>, <code>onProgress</code>, <code>onStatus</code>.</td></tr>
+            <tr><td><code>uploadVideo(options)</code></td><td>One-shot: upload + create media + create video. Returns <code>{ media, video }</code>. Same options as the constructor plus <code>file</code>, <code>title</code>, <code>description</code>, <code>programId</code>, <code>onProgress</code>, <code>onStatus</code>.</td></tr>
             <tr><td><code>makeCmsContext({ baseUrl, apiSecret?, log? })</code></td><td>Build the <code>cms</code> context (base URL + auth header) the calls below need.</td></tr>
-            <tr><td><code>uploadToByteArkStream(config, file, { title }, onProgress)</code></td><td>Upload the file only; resolves with the <code>videoKey</code>.</td></tr>
+            <tr><td><code>uploadToByteArkStream(config, file, { title }, onProgress)</code></td><td>Upload the file only; resolves with the raw ByteArk key. You only need this if you're wiring the steps yourself — <code>createMediaVideo</code> consumes it internally.</td></tr>
             <tr><td><code>createMediaVideo(cms, { videoKey, file, teamId })</code></td><td>Register the media-video (<code>POST /media/files</code>). Returns the media.</td></tr>
             <tr><td><code>createVideo(cms, { media, teamId, title, tagline, programId })</code></td><td>Create the video record (<code>POST /videos</code>), linked to the media. Returns the video.</td></tr>
             <tr><td><code>getVideoById(cms, videoId)</code></td><td>Fetch a video (<code>GET /videos/:videoId</code>); status + <code>embeddedUrl</code> are under <code>video.mediaVideo</code>.</td></tr>

@@ -17,7 +17,7 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
       onUploadProgress: (job, progress) => {},   // a video upload has progress ({ percent })
       onUploadCompleted: (job) => {},            // a video's records now exist in Thai PBS Video CMS
       onUploadFailed: (job, error) => {},        // a video failed; the queue continues
-      onVideosCreated: (videoKeys) => {},        // all queued videos are created in Thai PBS Video CMS
+      onVideosCreated: (videoIds) => {},         // all queued videos are created in Thai PBS Video CMS (their ids)
     });
 
     uploadManager.addUploadJobs(fileList);       // FileList, or [{ file, title, description, programId }]
@@ -52,7 +52,7 @@ export class CmsTwoSdk {
     onUploadProgress,            // (job, progress) — progress: { percent }
     onUploadCompleted,           // (job) — this job's media + video records exist in Thai PBS Video CMS
     onUploadFailed,              // (job, error) — this job failed; the queue continues
-    onVideosCreated,             // (videoKeys) — after start() drains the queue
+    onVideosCreated,             // (videoIds) — Thai PBS Video CMS video ids, after start() drains the queue
     onStatus,                    // (job, phase) — 'uploading' | 'creating-media' | 'creating-video'
   }) {
     this.teamId = teamId;
@@ -74,7 +74,7 @@ export class CmsTwoSdk {
         programId,
         status: 'pending',        // pending → uploading → creating-media → creating-video → completed | failed
         progress: { percent: 0 },
-        videoKey: null, media: null, video: null,
+        media: null, video: null,
       }));
     this.jobQueue.push(...jobs);
     return jobs;
@@ -88,20 +88,21 @@ export class CmsTwoSdk {
     if (this.running) return this.running;
     this.running = (async () => {
       const cb = this.callbacks;
-      const createdKeys = [];
+      const createdVideoIds = [];
       let job;
       // ponytail: serial queue — one upload at a time; add concurrency if throughput matters.
       while ((job = this.jobQueue.find((j) => j.status === 'pending'))) {
         try {
           job.status = 'uploading'; cb.onStatus?.(job, 'uploading');
-          job.videoKey = await uploadToByteArkStream(this.byteark, job.file, { title: job.title }, (pct) => {
+          // videoKey is the raw ByteArk key — kept internal; the dev works with job.video / job.media.
+          const videoKey = await uploadToByteArkStream(this.byteark, job.file, { title: job.title }, (pct) => {
             job.progress = { percent: pct };
             cb.onUploadProgress?.(job, job.progress);
           });
 
           const cms = makeCmsContext(this.cmsOptions);
           job.status = 'creating-media'; cb.onStatus?.(job, 'creating-media');
-          job.media = await createMediaVideo(cms, { videoKey: job.videoKey, file: job.file, teamId: this.teamId });
+          job.media = await createMediaVideo(cms, { videoKey, file: job.file, teamId: this.teamId });
 
           job.status = 'creating-video'; cb.onStatus?.(job, 'creating-video');
           job.video = await createVideo(cms, {
@@ -110,14 +111,14 @@ export class CmsTwoSdk {
           });
 
           job.status = 'completed';
-          createdKeys.push(job.videoKey);
+          createdVideoIds.push(job.video.id);
           cb.onUploadCompleted?.(job);
         } catch (error) {
           job.status = 'failed';
           cb.onUploadFailed?.(job, error);
         }
       }
-      if (createdKeys.length) cb.onVideosCreated?.(createdKeys);
+      if (createdVideoIds.length) cb.onVideosCreated?.(createdVideoIds);
       return this.jobQueue;
     })();
     try { return await this.running; } finally { this.running = null; }
@@ -145,7 +146,7 @@ export class CmsTwoSdk {
     return {
       onProgress(fn) { listeners.progress.push(fn); return this; },
       onStatus(fn) { listeners.status.push(fn); return this; },
-      // awaitable: `await myVideo` → { videoKey, media, video }
+      // awaitable: `await myVideo` → { media, video }
       then: (...a) => done.then(...a),
       catch: (...a) => done.catch(...a),
       finally: (...a) => done.finally(...a),
@@ -185,7 +186,7 @@ export async function uploadVideo({
 }) {
   const cms = makeCmsContext(cmsOptions);
 
-  // 1) upload the file to the media service → videoKey
+  // 1) upload the file to the media service (videoKey is the raw ByteArk key — used only internally)
   onStatus('uploading');
   const videoKey = await uploadToByteArkStream(byteark, file, { title }, onProgress);
 
@@ -198,7 +199,7 @@ export async function uploadVideo({
   const video = await createVideo(cms, { media, teamId, title, tagline: description, programId });
 
   onStatus('done');
-  return { videoKey, media, video };
+  return { media, video };
 }
 
 // Build the context every Thai PBS Video CMS call uses: { baseUrl, headers, log }.

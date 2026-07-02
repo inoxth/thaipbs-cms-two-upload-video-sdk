@@ -15,7 +15,7 @@ const uploadManager = new CmsTwoSdk({
   onUploadProgress: (job, progress) => console.log(job.name, progress.percent + '%'),
   onUploadCompleted: (job) => console.log('created in Thai PBS Video CMS:', job.video.id),
   onUploadFailed: (job, error) => console.error(job.name, error),
-  onVideosCreated: (videoKeys) => console.log('all done:', videoKeys),
+  onVideosCreated: (videoIds) => console.log('all done:', videoIds),
 });
 
 uploadManager.addUploadJobs(fileList);     // FileList, or [{ file, title, description, programId }]
@@ -37,7 +37,7 @@ const ready = await myVideo.whenReady();   // playable (ready.mediaVideo.embedde
 ```
 
 What each queued job does:
-1. Uploads the file to the media service → gets a `videoKey`.
+1. Uploads the file to the media service.
 2. Registers a **media-video** in the Thai PBS Video CMS library (`POST /api/v1/media/files`) — the record
    the processing webhook updates.
 3. Creates the **video** record with the metadata (`POST /api/v1/videos`), linked to the media.

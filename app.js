@@ -62,7 +62,7 @@ async function handleUpload() {
     const [job] = await uploadManager.start();   // resolves when the queue is drained
     if (job.status !== 'completed') return;      // failure already shown by onUploadFailed
 
-    log('video id: ' + job.video.id + '  (key: ' + job.videoKey + ')');
+    log('video id: ' + job.video.id);
     lastVideoId = job.video.id; $('refresh').disabled = false;   // enable manual refresh
     saveHistory();                // creds worked — remember them for next time
 
@@ -210,7 +210,7 @@ const uploadManager = new CmsTwoSdk({
     apiSecret: ${secret('apiSecret', 'apiSecret')},
   },
   onUploadProgress: (job, progress) => console.log(progress.percent + '%'),
-  onUploadCompleted: (job) => console.log('created:', job.videoKey),
+  onUploadCompleted: (job) => console.log('created:', job.video.id),
 });
 
 uploadManager.addUploadJobs([{

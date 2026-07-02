@@ -1,5 +1,6 @@
-// app.js — UI wiring: read the form, call the api.js functions, update preview/status/log.
-import * as api from './api.js';
+// app.js — the demo UI. Integration-wise it does exactly what your app would do:
+// construct a CmsTwoSdk, addUploadJobs(), start(), and check getVideoByKey() until ready.
+import { CmsTwoSdk } from './sdk.js';
 import { t, initI18n } from './i18n.js';
 
 // ── tiny DOM helpers ──────────────────────────────────────────────────────────────
@@ -10,35 +11,26 @@ const setStatus = (text, kind = 'info') => {   // kind: 'info' | 'ok' | 'err'
   $('status').textContent = text;
 };
 
-// Gather the current form values into the shapes api.js expects.
-const byteArkConfig = () => ({
-  serviceEndpoint: $('serviceEndpoint').value.trim(),
-  formId: $('formId').value.trim(),
-  formSecret: $('formSecret').value.trim(),
-  projectKey: $('projectKey').value.trim(),
+// Build the SDK from the current form values (fresh each time, so edits apply immediately).
+const uploader = (callbacks = {}) => new CmsTwoSdk({
+  teamId: $('teamId').value.trim(),
+  byteark: {
+    serviceEndpoint: $('serviceEndpoint').value.trim(),
+    formId: $('formId').value.trim(),
+    formSecret: $('formSecret').value.trim(),
+    projectKey: $('projectKey').value.trim(),
+  },
+  cms: { baseUrl: $('cmsBase').value, apiSecret: $('apiSecret').value.trim(), log },
+  ...callbacks,
 });
-const cms = () => {
-  const secret = $('apiSecret').value.trim();
-  return {
-    baseUrl: $('cmsBase').value.replace(/\/$/, ''),
-    // Auth header for CMS-Two: optional on local (auto-auth), required on staging.
-    headers: secret ? { 'x-api-server-secret': secret } : {},
-    log,
-  };
-};
 
-// ── main flow: one click runs upload → create media → create video ──────────────────
+// ── main flow: ONE call to the SDK does upload → create media → create video ─────────
 let busy = false;
 let lastVideoKey = null;   // the most recent upload, so "Refresh player" can re-check it
 async function handleUpload() {
   if (busy) return;
   const file = $('file').files[0];
   if (!file) return alert(t('alert.pickFile'));
-
-  const teamId = $('teamId').value.trim();
-  const title = $('title').value.trim() || file.name;
-  const description = $('description').value.trim();
-  const programId = $('program').value;
 
   busy = true;
   $('go').disabled = true;
@@ -47,29 +39,36 @@ async function handleUpload() {
   showPreview('empty');
 
   try {
-    // STEP 1 — upload the file to ByteArk Stream
-    setStatus(t('status.uploading'));
-    const videoKey = await api.uploadToByteArkStream(byteArkConfig(), file, { title }, (pct) => {
-      $('bar').value = Math.round(pct);
-      setStatus(t('status.uploadingPct', Math.round(pct)));
+    // ByteArk-style queue: construct with callbacks, queue the file(s), then start().
+    const uploadManager = uploader({
+      onUploadProgress: (_job, progress) => {
+        $('bar').value = Math.round(progress.percent);
+        setStatus(t('status.uploadingPct', Math.round(progress.percent)));
+      },
+      onStatus: (_job, phase) => {
+        if (phase === 'uploading') setStatus(t('status.uploading'));
+        if (phase === 'creating-media') { $('bar').value = 100; setStatus(t('status.creatingMedia')); }
+        if (phase === 'creating-video') setStatus(t('status.creatingVideo'));
+      },
+      onUploadCompleted: () => setStatus(t('status.done'), 'ok'),
+      onUploadFailed: (_job, error) => { setStatus(t('status.error'), 'err'); log(String(error)); },
     });
-    $('bar').value = 100;
-    log('video key: ' + videoKey);
-    setStatus(t('status.uploaded'), 'ok');
-    lastVideoKey = videoKey; $('refresh').disabled = false;   // enable manual refresh
+
+    uploadManager.addUploadJobs([{
+      file,
+      title: $('title').value.trim() || file.name,
+      description: $('description').value.trim(),
+      programId: $('program').value,
+    }]);
+    const [job] = await uploadManager.start();   // resolves when the queue is drained
+    if (job.status !== 'completed') return;      // failure already shown by onUploadFailed
+
+    log('video key: ' + job.videoKey);
+    lastVideoKey = job.videoKey; $('refresh').disabled = false;   // enable manual refresh
     saveHistory();                // creds worked — remember them for next time
 
-    // STEP 2a — register the media-video in the library (this is what the webhook updates)
-    setStatus(t('status.creatingMedia'));
-    const media = await api.createMediaVideo(cms(), { videoKey, file, teamId });
-
-    // STEP 2b — create the Video record from that media (title / description / program)
-    setStatus(t('status.creatingVideo'));
-    await api.createVideo(cms(), { media, teamId, title, tagline: description, programId });
-    setStatus(t('status.done'), 'ok');
-
     // Poll CMS-Two until the video is ready, then show the player from the API response.
-    if ($('auto').checked) whenReadyShowPlayer(videoKey);
+    if ($('auto').checked) whenReadyShowPlayer(job.videoKey);
   } catch (err) {
     setStatus(t('status.error'), 'err'); log(String(err));
   } finally {
@@ -93,7 +92,7 @@ function showPreview(state, url) {
 // the CMS-Two player using the embeddedUrl from that same GET response.
 async function whenReadyShowPlayer(videoKey) {
   while (true) {
-    const media = await api.getMediaVideoByKey(cms(), videoKey);
+    const media = await uploader().getVideoByKey(videoKey);
     const status = media?.mediaVideoStatus;
     if (status === 'completed') {
       showPreview('embed', media.embeddedUrl);
@@ -113,7 +112,7 @@ $('refresh').addEventListener('click', async () => {
   if (!lastVideoKey) return;
   const btn = $('refresh'); btn.disabled = true;
   try {
-    const media = await api.getMediaVideoByKey(cms(), lastVideoKey);
+    const media = await uploader().getVideoByKey(lastVideoKey);
     if (media?.mediaVideoStatus === 'completed') {
       showPreview('embed', media.embeddedUrl);
       setStatus(t('status.ready'), 'ok');
@@ -130,7 +129,7 @@ $('loadPrograms').addEventListener('click', async () => {
   if (!teamId) return alert(t('alert.enterTeam'));
   const btn = $('loadPrograms'); btn.disabled = true; btn.textContent = t('btn.loading');
   try {
-    const data = await api.listPrograms(cms(), teamId);
+    const data = await uploader().listPrograms();
     $('program').innerHTML = '<option value="">' + t('opt.none') + '</option>';
     for (const p of data) $('program').add(new Option(p.title + (p.slugCode ? ' (' + p.slugCode + ')' : ''), p.id));
     log(t('log.loadedPrograms', data.length));
@@ -172,3 +171,67 @@ loadHistory();
 
 // render the initial language + wire the EN/TH switcher
 initI18n();
+
+// ── docs chrome: copy buttons on code blocks + active-section highlight in the sidebar ──
+for (const pre of document.querySelectorAll('pre.code')) {
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'copy-btn'; btn.textContent = 'Copy';
+  btn.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(pre.querySelector('code').textContent);
+    btn.textContent = 'Copied'; setTimeout(() => (btn.textContent = 'Copy'), 1200);
+  });
+  pre.appendChild(btn);
+}
+
+// ── live code: mirror the form as a real CmsTwoSdk call, updating as the user types ──
+function renderLiveCode() {
+  const v = (id) => $(id).value.trim();
+  const str = (s) => "'" + String(s).replace(/'/g, "\\'") + "'";
+  const orPh = (id, ph) => str(v(id) || ph);          // value, else a <placeholder>
+  const secret = (id, ph) => (v(id) ? "'•••••'" : str(ph)); // never print the real secret
+  // The demo routes staging through the local proxy (base ''), but the live code should show the
+  // real domain a dev would actually put here.
+  const base = $('cmsBase').value || 'https://console-program-new.thaipbsbeta.com';
+  const file = $('file').files[0];
+  const programId = $('program').value;
+
+  $('liveCode').querySelector('code').textContent =
+`import { CmsTwoSdk } from './sdk.js';
+
+const uploadManager = new CmsTwoSdk({
+  teamId: ${orPh('teamId', '<team ObjectId>')},
+  byteark: {
+    formId: ${orPh('formId', '<form id>')},
+    formSecret: ${orPh('formSecret', '<form secret>')},
+    projectKey: ${orPh('projectKey', '<project key>')},
+    serviceEndpoint: ${orPh('serviceEndpoint', 'https://stream.byteark.com')},
+  },
+  cms: {
+    baseUrl: ${str(base)},
+    apiSecret: ${secret('apiSecret', '<staging only>')},
+  },
+  onUploadProgress: (job, progress) => console.log(progress.percent + '%'),
+  onUploadCompleted: (job) => console.log('created:', job.videoKey),
+});
+
+uploadManager.addUploadJobs([{
+  file,${file ? '   // ' + file.name : '   // choose a video file below'}
+  title: ${orPh('title', '<title>')},
+  description: ${orPh('description', '')},${programId ? `\n  programId: ${str(programId)},` : ''}
+}]);
+
+await uploadManager.start();`;
+}
+document.addEventListener('input', renderLiveCode);
+document.addEventListener('change', renderLiveCode);
+renderLiveCode();
+
+const navLinks = [...document.querySelectorAll('.sidebar nav a')];
+const spy = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) {
+    navLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id));
+  }
+}, { rootMargin: '0px 0px -70% 0px' });
+for (const sec of document.querySelectorAll('[id]')) {
+  if (navLinks.some((a) => a.getAttribute('href') === '#' + sec.id)) spy.observe(sec);
+}

@@ -3,102 +3,361 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CMS-Two upload demo</title>
+  <title>CMS-Two Video Upload SDK</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="wrap">
-    <div class="lang">
-      <button type="button" data-lang="en">EN</button>
-      <button type="button" data-lang="th">TH</button>
-    </div>
-    <header>
-      <span class="kicker">CMS-Two</span>
-      <h1 data-i18n="app.title">CMS-Two upload demo</h1>
-      <p data-i18n="app.subtitle">Upload a video file and register it in CMS-Two.</p>
-    </header>
+  <div class="docs">
+    <!-- ── On this page ─────────────────────────────────────────────────────────── -->
+    <aside class="sidebar">
+      <div class="sidebar-title">CMS-Two SDK</div>
+      <nav>
+        <a href="#overview">Overview</a>
+        <a href="#prerequisites">Before you start</a>
+        <a href="#install">Installation</a>
+        <a href="#quickstart">Quick start</a>
+        <div class="nav-group">Class: CmsTwoSdk</div>
+        <a href="#constructor">new CmsTwoSdk()</a>
+        <a href="#addUploadJobs">addUploadJobs()</a>
+        <a href="#start">start()</a>
+        <a href="#getJobQueue">getJobQueue()</a>
+        <a href="#upload">upload()</a>
+        <a href="#getVideoByKey">getVideoByKey()</a>
+        <a href="#listPrograms">listPrograms()</a>
+        <div class="nav-group">Types</div>
+        <a href="#job">Job</a>
+        <div class="nav-group">Low-level functions</div>
+        <a href="#lowlevel">uploadVideo() &amp; helpers</a>
+        <div class="nav-group">Try it</div>
+        <a href="#demo">Live demo</a>
+      </nav>
+    </aside>
 
-    <!-- the flow, at a glance -->
-    <div class="flow">
-      <div class="node"><b data-i18n="flow.upload.title">Upload the file</b><span data-i18n="flow.upload.desc">The video file is stored by the media service</span></div>
-      <div class="arrow">→</div>
-      <div class="node"><b>CMS-Two</b><span data-i18n="flow.cms.desc">Creates the video record + metadata</span></div>
-    </div>
-
-    <!-- 1. upload credentials -->
-    <section class="card">
-      <h2><span class="num">1</span> <span data-i18n="card1.title">Upload credentials</span></h2>
-      <div class="row">
-        <div><label>Form ID</label><input id="formId" placeholder="form id" /></div>
-        <div><label>Form Secret</label><input id="formSecret" placeholder="form secret" /></div>
-      </div>
-      <div class="row">
-        <div><label>Project Key</label><input id="projectKey" placeholder="project key" /></div>
-        <div><label>Service Endpoint</label><input id="serviceEndpoint" value="https://stream.byteark.com" /></div>
-      </div>
-    </section>
-
-    <!-- 2. CMS-Two target -->
-    <section class="card">
-      <h2><span class="num">2</span> CMS-Two</h2>
-      <div class="row">
-        <div><label data-i18n="label.baseUrl">Base URL</label>
-          <select id="cmsBase">
-            <option value="" data-i18n="opt.staging" selected>Staging — via local proxy (run proxy.mjs)</option>
-            <option value="http://localhost:3000" data-i18n="opt.local">Local dev — http://localhost:3000</option>
-          </select>
+    <main class="content">
+      <div class="content-head">
+        <div>
+          <span class="kicker">CMS-Two</span>
+          <h1 data-i18n="app.title">CMS-Two Video Upload SDK</h1>
         </div>
-        <div><label data-i18n="label.teamId">Team ID</label><input id="teamId" placeholder="team ObjectId" /></div>
+        <div class="lang">
+          <button type="button" data-lang="en">EN</button>
+          <button type="button" data-lang="th">TH</button>
+        </div>
       </div>
-      <label><span data-i18n="label.apiSecret">API secret</span> <span style="font-weight:400;color:var(--muted)" data-i18n="note.apiSecret">(only for staging — the env API_SERVER_SECRET)</span></label>
-      <div class="secret-field">
-        <input id="apiSecret" type="password" placeholder="leave blank for local dev" data-i18n-ph="ph.apiSecret" />
-        <button type="button" id="toggleSecret" class="eye" aria-label="Show secret" title="Show / hide">
-          <svg class="i-show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          <svg class="i-hide" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        </button>
+
+      <!-- ── Overview ───────────────────────────────────────────────────────────── -->
+      <section id="overview">
+        <p class="lead" data-i18n="app.subtitle">Upload videos into CMS-Two from your own app — one class, no dependencies.</p>
+        <p>The video file lives on the media service; CMS-Two stores the metadata and a reference to it.
+           <code>CmsTwoSdk</code> does both in one flow: upload the file, register a <em>media-video</em>,
+           then create the <em>video</em> record — and gives you callbacks + a status you can poll.</p>
+        <div class="flow">
+          <div class="node"><b data-i18n="flow.upload.title">Upload the file</b><span data-i18n="flow.upload.desc">The video file is stored by the media service</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><b>CMS-Two</b><span data-i18n="flow.cms.desc">Creates the video record + metadata</span></div>
+        </div>
+      </section>
+
+      <!-- ── Prerequisites ──────────────────────────────────────────────────────── -->
+      <section id="prerequisites">
+        <h2 data-i18n="doc.prereq.title">Before you start</h2>
+        <ul class="doc-list">
+          <li data-i18n="doc.prereq.item1">Uploader form credentials — formId, formSecret, and the projectKey of the target project.</li>
+          <li data-i18n="doc.prereq.item2">Your CMS-Two team ID (teamId).</li>
+          <li data-i18n="doc.prereq.item3">The CMS-Two base URL — plus the API secret (env API_SERVER_SECRET) when not on local dev.</li>
+        </ul>
+      </section>
+
+      <!-- ── Installation ───────────────────────────────────────────────────────── -->
+      <section id="install">
+        <h2>Installation</h2>
+        <p>Copy <code>sdk.js</code> into your project and import it — no npm install, no build step
+           (the ByteArk upload library is loaded from a CDN inside the file).</p>
+<pre class="code" data-lang="javascript"><code>import { CmsTwoSdk } from './sdk.js';</code></pre>
+      </section>
+
+      <!-- ── Quick start ────────────────────────────────────────────────────────── -->
+      <section id="quickstart">
+        <h2>Quick start</h2>
+        <p>Four steps from a picked file to a video in CMS-Two.</p>
+
+        <h3 class="step"><span class="num">1</span> Initialize the SDK</h3>
+        <p>Create one upload manager with your credentials and callbacks — reuse it for every upload.</p>
+<pre class="code" data-lang="javascript"><code>const uploadManager = new CmsTwoSdk({
+  teamId: '&lt;team ObjectId&gt;',
+  byteark: { formId, formSecret, projectKey, serviceEndpoint: 'https://stream.byteark.com' },
+  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
+  onUploadProgress: (job, progress) =&gt; console.log(progress.percent + '%'),
+  onUploadCompleted: (job) =&gt; console.log('created:', job.videoKey),
+});</code></pre>
+
+        <h3 class="step"><span class="num">2</span> Add the file(s) to the queue</h3>
+        <p>Queue a <code>File</code> (from an <code>&lt;input type="file"&gt;</code>), optionally with metadata.</p>
+<pre class="code" data-lang="javascript"><code>uploadManager.addUploadJobs([{ file, title: 'My video', description: 'demo' }]);</code></pre>
+
+        <h3 class="step"><span class="num">3</span> Start uploading</h3>
+        <p>Runs the queue and creates the CMS-Two records. Resolves when every job is done.</p>
+<pre class="code" data-lang="javascript"><code>const [job] = await uploadManager.start();
+console.log(job.videoKey);   // the created video's key</code></pre>
+
+        <h3 class="step"><span class="num">4</span> Wait until it's playable</h3>
+        <p>The file keeps processing after upload — poll until <code>completed</code>, then use <code>embeddedUrl</code>.</p>
+<pre class="code" data-lang="javascript"><code>let media = await uploadManager.getVideoByKey(job.videoKey);
+while (media.mediaVideoStatus !== 'completed') {
+  await new Promise((r) =&gt; setTimeout(r, 5000));
+  media = await uploadManager.getVideoByKey(job.videoKey);
+}
+player.src = media.embeddedUrl;</code></pre>
+
+        <p class="hint">Uploading a single file? <a href="#upload"><code>upload(file)</code></a> does steps 2–4 in one call and returns an awaitable handle.</p>
+      </section>
+
+      <!-- ═══════════════════════════ API REFERENCE ═══════════════════════════════ -->
+      <h2 class="ref-heading">API reference</h2>
+
+      <!-- constructor -->
+      <section id="constructor" class="ref">
+        <h3><code>new CmsTwoSdk(options)</code></h3>
+        <p>Create an upload manager. Pass your credentials once; reuse it for many uploads. All
+           callbacks are optional.</p>
+        <table class="params">
+          <thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>teamId</code></td><td>string</td><td>CMS-Two team ObjectId that owns the video.</td></tr>
+            <tr><td><code>byteark</code></td><td>object</td><td><code>{ formId, formSecret, projectKey, serviceEndpoint }</code> — upload form credentials.</td></tr>
+            <tr><td><code>cms</code></td><td>object</td><td><code>{ baseUrl, apiSecret?, log? }</code>. <code>apiSecret</code> is optional on local (auto-auth), required elsewhere. <code>log</code> is an optional <code>(msg) =&gt; void</code>.</td></tr>
+            <tr><td><code>onUploadProgress</code></td><td>function</td><td><code>(job, progress)</code> — a job's upload progressed. <code>progress = { percent }</code>.</td></tr>
+            <tr><td><code>onUploadCompleted</code></td><td>function</td><td><code>(job)</code> — a job's CMS-Two records now exist (<code>job.videoKey</code>, <code>job.media</code>, <code>job.video</code>).</td></tr>
+            <tr><td><code>onUploadFailed</code></td><td>function</td><td><code>(job, error)</code> — a job failed; the queue continues with the next one.</td></tr>
+            <tr><td><code>onVideosCreated</code></td><td>function</td><td><code>(videoKeys)</code> — fired once after <code>start()</code> drains the queue, with every created key.</td></tr>
+            <tr><td><code>onStatus</code></td><td>function</td><td><code>(job, phase)</code> — phase is <code>'uploading' | 'creating-media' | 'creating-video'</code>.</td></tr>
+          </tbody>
+        </table>
+<pre class="code" data-lang="javascript"><code>const uploadManager = new CmsTwoSdk({
+  teamId: '&lt;team ObjectId&gt;',
+  byteark: { formId, formSecret, projectKey, serviceEndpoint: 'https://stream.byteark.com' },
+  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
+  onUploadProgress: (job, progress) =&gt; console.log(job.name, progress.percent + '%'),
+  onUploadCompleted: (job) =&gt; console.log('created:', job.videoKey),
+  onUploadFailed: (job, error) =&gt; console.error(job.name, error),
+  onVideosCreated: (videoKeys) =&gt; console.log('all done:', videoKeys),
+});</code></pre>
+      </section>
+
+      <!-- addUploadJobs -->
+      <section id="addUploadJobs" class="ref">
+        <h3><code>addUploadJobs(files)</code> <span class="badge">returns Job[]</span></h3>
+        <p>Queue one or more files for upload. Nothing uploads until you call <a href="#start"><code>start()</code></a>.</p>
+        <table class="params">
+          <thead><tr><th>Param</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>files</code></td><td>FileList | File[] | object[]</td><td>Either raw files, or <code>{ file, title?, description?, programId? }</code> objects to attach metadata per file. A bare <code>File</code> uses its filename as the title.</td></tr>
+          </tbody>
+        </table>
+<pre class="code" data-lang="javascript"><code>uploadManager.addUploadJobs(fileList);                       // from an &lt;input type="file"&gt;
+uploadManager.addUploadJobs([{ file, title: 'My video', description: 'demo', programId: '&lt;id&gt;' }]);</code></pre>
+      </section>
+
+      <!-- start -->
+      <section id="start" class="ref">
+        <h3><code>start()</code> <span class="badge">async → Job[]</span></h3>
+        <p>Process every pending job in the queue, one at a time. Resolves with the full job list when
+           all jobs are <code>completed</code> or <code>failed</code>. It never rejects — a failed job
+           fires <code>onUploadFailed</code> and the queue moves on. Calling it while already running
+           returns the in-flight promise.</p>
+<pre class="code" data-lang="javascript"><code>const jobs = await uploadManager.start();
+const ok = jobs.filter((j) =&gt; j.status === 'completed');</code></pre>
+      </section>
+
+      <!-- getJobQueue -->
+      <section id="getJobQueue" class="ref">
+        <h3><code>getJobQueue()</code> <span class="badge">returns Job[]</span></h3>
+        <p>The current queue, including finished jobs. Useful for rendering per-file progress —
+           read <code>job.status</code> and <code>job.progress.percent</code>.</p>
+<pre class="code" data-lang="javascript"><code>for (const job of uploadManager.getJobQueue()) {
+  console.log(job.name, job.status, job.progress.percent + '%');
+}</code></pre>
+      </section>
+
+      <!-- upload -->
+      <section id="upload" class="ref">
+        <h3><code>upload(file, metadata?)</code> <span class="badge">returns handle</span></h3>
+        <p>Single-file shortcut: queues the file and starts immediately, returning an awaitable
+           <em>handle</em> so you can track just that one upload without wiring constructor callbacks.</p>
+        <table class="params">
+          <thead><tr><th>Param</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>file</code></td><td>File</td><td>A File from an <code>&lt;input type="file"&gt;</code> or drag-and-drop.</td></tr>
+            <tr><td><code>metadata</code></td><td>object</td><td>Optional <code>{ title?, description?, programId? }</code>.</td></tr>
+          </tbody>
+        </table>
+        <p>The handle has:</p>
+        <table class="params">
+          <thead><tr><th>Member</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>.onProgress(fn)</code></td><td>Register a <code>(percent) =&gt; void</code> callback. Chainable.</td></tr>
+            <tr><td><code>.onStatus(fn)</code></td><td>Register a <code>(phase) =&gt; void</code> callback. Chainable.</td></tr>
+            <tr><td><code>await handle</code></td><td>Resolves to <code>{ videoKey, media, video }</code> once the records exist.</td></tr>
+            <tr><td><code>.whenReady({ intervalMs })</code></td><td>Polls until the video is playable; resolves with the media (has <code>embeddedUrl</code>). Default interval 5000ms.</td></tr>
+          </tbody>
+        </table>
+<pre class="code" data-lang="javascript"><code>const myVideo = uploadManager.upload(file, { title: 'My video' });
+myVideo.onProgress((pct) =&gt; console.log(pct + '%'));
+
+const { videoKey } = await myVideo;        // records created
+const ready = await myVideo.whenReady();   // playable
+player.src = ready.embeddedUrl;</code></pre>
+      </section>
+
+      <!-- getVideoByKey -->
+      <section id="getVideoByKey" class="ref">
+        <h3><code>getVideoByKey(videoKey)</code> <span class="badge">async → media</span></h3>
+        <p>Fetch a media-video by its key. After upload the file is still processing; poll this until
+           <code>mediaVideoStatus === 'completed'</code>, then use <code>embeddedUrl</code> to play it.</p>
+        <table class="params">
+          <thead><tr><th>Returns</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>mediaVideoStatus</code></td><td><code>'pending' → 'processing' → 'completed'</code> (a webhook updates it). Or <code>'failed'</code>.</td></tr>
+            <tr><td><code>embeddedUrl</code></td><td>Player URL, usable once completed.</td></tr>
+          </tbody>
+        </table>
+<pre class="code" data-lang="javascript"><code>const { mediaVideoStatus, embeddedUrl } = await uploadManager.getVideoByKey(videoKey);</code></pre>
+      </section>
+
+      <!-- listPrograms -->
+      <section id="listPrograms" class="ref">
+        <h3><code>listPrograms()</code> <span class="badge">async → Program[]</span></h3>
+        <p>List the team's programs, for linking a video to one via <code>programId</code>. Each item
+           has <code>id</code>, <code>title</code>, and <code>slugCode</code>.</p>
+<pre class="code" data-lang="javascript"><code>const programs = await uploadManager.listPrograms();</code></pre>
+      </section>
+
+      <!-- Job type -->
+      <section id="job" class="ref">
+        <h3>The <code>Job</code> object</h3>
+        <p>Every queued file becomes a job. Callbacks receive it, and <code>getJobQueue()</code> returns them.</p>
+        <table class="params">
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>file</code> / <code>name</code></td><td>File / string</td><td>The source file and its filename.</td></tr>
+            <tr><td><code>title</code> / <code>description</code> / <code>programId</code></td><td>string</td><td>Metadata for the video record.</td></tr>
+            <tr><td><code>status</code></td><td>string</td><td><code>'pending' → 'uploading' → 'creating-media' → 'creating-video' → 'completed'</code> (or <code>'failed'</code>).</td></tr>
+            <tr><td><code>progress</code></td><td>object</td><td><code>{ percent }</code> — upload progress.</td></tr>
+            <tr><td><code>videoKey</code></td><td>string</td><td>The key from the media service (set after upload).</td></tr>
+            <tr><td><code>media</code> / <code>video</code></td><td>object</td><td>The created CMS-Two records (set after each step).</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Low-level -->
+      <section id="lowlevel" class="ref">
+        <h3>Low-level functions</h3>
+        <p>The class is built on these named exports. Use them directly if you need finer control.
+           Each CMS call takes a <em>context</em> from <code>makeCmsContext</code>.</p>
+        <table class="params">
+          <thead><tr><th>Function</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>uploadVideo(options)</code></td><td>One-shot: upload + create media + create video. Returns <code>{ videoKey, media, video }</code>. Same options as the constructor plus <code>file</code>, <code>title</code>, <code>description</code>, <code>programId</code>, <code>onProgress</code>, <code>onStatus</code>.</td></tr>
+            <tr><td><code>makeCmsContext({ baseUrl, apiSecret?, log? })</code></td><td>Build the <code>cms</code> context (base URL + auth header) the calls below need.</td></tr>
+            <tr><td><code>uploadToByteArkStream(config, file, { title }, onProgress)</code></td><td>Upload the file only; resolves with the <code>videoKey</code>.</td></tr>
+            <tr><td><code>createMediaVideo(cms, { videoKey, file, teamId })</code></td><td>Register the media-video (<code>POST /media/files</code>). Returns the media.</td></tr>
+            <tr><td><code>createVideo(cms, { media, teamId, title, tagline, programId })</code></td><td>Create the video record (<code>POST /videos</code>), linked to the media. Returns the video.</td></tr>
+            <tr><td><code>getMediaVideoByKey(cms, videoKey)</code></td><td>Fetch a media-video by key (status + <code>embeddedUrl</code>).</td></tr>
+            <tr><td><code>listPrograms(cms, teamId)</code></td><td>List a team's programs.</td></tr>
+          </tbody>
+        </table>
+<pre class="code" data-lang="javascript"><code>import { uploadVideo, makeCmsContext, getMediaVideoByKey } from './sdk.js';
+
+const { videoKey } = await uploadVideo({
+  file, title: 'My video', teamId: '&lt;team ObjectId&gt;',
+  byteark: { formId, formSecret, projectKey, serviceEndpoint: 'https://stream.byteark.com' },
+  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
+  onProgress: (pct) =&gt; console.log(pct + '%'),
+});
+
+const cms = makeCmsContext({ baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' });
+const media = await getMediaVideoByKey(cms, videoKey);</code></pre>
+      </section>
+
+      <!-- ═══════════════════════════════ LIVE DEMO ═══════════════════════════════ -->
+      <h2 id="demo" class="ref-heading" data-i18n="demo.title">Live demo</h2>
+      <p class="hint" data-i18n="demo.desc">Try the SDK right here — this form runs exactly the code documented above.</p>
+
+      <div class="section-title" data-i18n="demo.codeTitle">Your SDK call — updates as you fill the form below</div>
+<pre class="code" data-lang="javascript" id="liveCode"><code></code></pre>
+
+      <section class="card">
+        <h3><span class="num">1</span> <span data-i18n="card1.title">Upload credentials</span></h3>
+        <div class="row">
+          <div><label>Form ID</label><input id="formId" placeholder="form id" /></div>
+          <div><label>Form Secret</label><input id="formSecret" placeholder="form secret" /></div>
+        </div>
+        <div class="row">
+          <div><label>Project Key</label><input id="projectKey" placeholder="project key" /></div>
+          <div><label>Service Endpoint</label><input id="serviceEndpoint" value="https://stream.byteark.com" /></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3><span class="num">2</span> CMS-Two</h3>
+        <div class="row">
+          <div><label data-i18n="label.baseUrl">Base URL</label>
+            <select id="cmsBase">
+              <option value="" data-i18n="opt.staging" selected>Staging — via local proxy (run proxy.mjs)</option>
+              <option value="http://localhost:3000" data-i18n="opt.local">Local dev — http://localhost:3000</option>
+            </select>
+          </div>
+          <div><label data-i18n="label.teamId">Team ID</label><input id="teamId" placeholder="team ObjectId" /></div>
+        </div>
+        <label><span data-i18n="label.apiSecret">API secret</span> <span style="font-weight:400;color:var(--muted)" data-i18n="note.apiSecret">(only for staging — the env API_SERVER_SECRET)</span></label>
+        <div class="secret-field">
+          <input id="apiSecret" type="password" placeholder="leave blank for local dev" data-i18n-ph="ph.apiSecret" />
+          <button type="button" id="toggleSecret" class="eye" aria-label="Show secret" title="Show / hide">
+            <svg class="i-show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="i-hide" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
+        <p class="hint" data-i18n="hint.apiSecret">Sent as the x-api-server-secret header. localhost:3000 auto-authenticates, so leave blank there.</p>
+      </section>
+
+      <section class="card">
+        <h3><span class="num">3</span> <span data-i18n="card3.title">Video details</span></h3>
+        <label><span data-i18n="label.program">Program</span> <span style="font-weight:400;color:var(--muted)" data-i18n="note.program">(optional — links the video to a program)</span></label>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:1 1 100%"><select id="program"><option value="" data-i18n="opt.none">— none —</option></select></div>
+          <button type="button" id="loadPrograms" class="btn-ghost" data-i18n="btn.loadPrograms">Load programs</button>
+        </div>
+        <label data-i18n="label.title">Title</label><input id="title" placeholder="video title" />
+        <label data-i18n="label.description">Description</label><input id="description" placeholder="video description" />
+        <label data-i18n="label.file">Video file</label><input id="file" type="file" accept="video/*" />
+        <p class="hint" data-i18n="hint.video">One click: uploads the file → registers the media in CMS-Two → creates the video record.</p>
+      </section>
+
+      <label class="toggle">
+        <input type="checkbox" id="auto" checked />
+        <span data-i18n="toggle.autoRefresh">Auto-refresh the preview to the CMS-Two player once the video is ready</span>
+      </label>
+      <button id="go" class="btn-primary" data-i18n="btn.upload">Upload video</button>
+
+      <progress id="bar" value="0" max="100" hidden></progress>
+      <div><span id="status"></span></div>
+
+      <div class="preview-head">
+        <span class="section-title" data-i18n="section.preview">Preview</span>
+        <button type="button" id="refresh" class="btn-ghost" data-i18n="btn.refresh" disabled>Refresh player</button>
       </div>
-      <p class="hint" data-i18n="hint.apiSecret">Sent as the x-api-server-secret header. localhost:3000 auto-authenticates, so leave blank there.</p>
-    </section>
-
-    <!-- 3. Video: fill everything, pick the file, then Upload -->
-    <section class="card">
-      <h2><span class="num">3</span> <span data-i18n="card3.title">Video details</span></h2>
-      <label><span data-i18n="label.program">Program</span> <span style="font-weight:400;color:var(--muted)" data-i18n="note.program">(optional — links the video to a program)</span></label>
-      <div class="row" style="align-items:flex-end">
-        <div style="flex:1 1 100%"><select id="program"><option value="" data-i18n="opt.none">— none —</option></select></div>
-        <button type="button" id="loadPrograms" class="btn-ghost" data-i18n="btn.loadPrograms">Load programs</button>
+      <div class="frame">
+        <iframe id="previewFrame" allow="autoplay; fullscreen" allowfullscreen style="display:none"></iframe>
+        <div id="previewEmpty" class="empty" data-i18n="preview.empty">No video yet — upload one to preview</div>
       </div>
-      <label data-i18n="label.title">Title</label><input id="title" placeholder="video title" />
-      <label data-i18n="label.description">Description</label><input id="description" placeholder="video description" />
-      <label data-i18n="label.file">Video file</label><input id="file" type="file" accept="video/*" />
-      <p class="hint" data-i18n="hint.video">One click: uploads the file → registers the media in CMS-Two → creates the video record.</p>
-    </section>
+      <p class="hint" data-i18n="hint.preview">The CMS-Two player appears here once the video is ready.</p>
 
-    <label class="toggle">
-      <input type="checkbox" id="auto" checked />
-      <span data-i18n="toggle.autoRefresh">Auto-refresh the preview to the CMS-Two player once the video is ready</span>
-    </label>
-    <button id="go" class="btn-primary" data-i18n="btn.upload">Upload video</button>
-
-    <progress id="bar" value="0" max="100" hidden></progress>
-    <div><span id="status"></span></div>
-
-    <div class="preview-head">
-      <span class="section-title" data-i18n="section.preview">Preview</span>
-      <button type="button" id="refresh" class="btn-ghost" data-i18n="btn.refresh" disabled>Refresh player</button>
-    </div>
-    <div class="frame">
-      <iframe id="previewFrame" allow="autoplay; fullscreen" allowfullscreen style="display:none"></iframe>
-      <div id="previewEmpty" class="empty" data-i18n="preview.empty">No video yet — upload one to preview</div>
-    </div>
-    <p class="hint" data-i18n="hint.preview">The CMS-Two player appears here once the video is ready.</p>
-
-    <div class="section-title" data-i18n="section.log">Log</div>
-    <pre id="log" data-i18n="log.ready">Ready.</pre>
+      <div class="section-title" data-i18n="section.log">Log</div>
+      <pre id="log" data-i18n="log.ready">Ready.</pre>
+    </main>
   </div>
 
   <script type="module" src="app.js"></script>

@@ -207,7 +207,7 @@ const uploadManager = new CmsTwoSdk({
   },
   cms: {
     baseUrl: ${str(base)},
-    apiSecret: ${secret('apiSecret', '<staging only>')},
+    apiSecret: ${secret('apiSecret', 'apiSecret')},
   },
   onUploadProgress: (job, progress) => console.log(progress.percent + '%'),
   onUploadCompleted: (job) => console.log('created:', job.videoKey),

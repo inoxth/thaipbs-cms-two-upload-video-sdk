@@ -107,7 +107,7 @@
 <pre class="code" data-lang="javascript"><code>const uploadManager = new CmsTwoSdk({
   teamId: 'teamId',
   byteark: { formId, formSecret, projectKey },
-  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
+  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' },
   onUploadProgress: (job, progress) =&gt; console.log(progress.percent + '%'),
   onUploadCompleted: (job) =&gt; console.log('created:', job.videoKey),
 });</code></pre>
@@ -157,7 +157,7 @@ player.src = video.mediaVideo.embeddedUrl;</code></pre>
 <pre class="code" data-lang="javascript"><code>const uploadManager = new CmsTwoSdk({
   teamId: 'teamId',
   byteark: { formId, formSecret, projectKey },
-  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
+  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' },
   onUploadProgress: (job, progress) =&gt; console.log(job.name, progress.percent + '%'),
   onUploadCompleted: (job) =&gt; console.log('created:', job.videoKey),
   onUploadFailed: (job, error) =&gt; console.error(job.name, error),
@@ -350,11 +350,11 @@ const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
 const { video } = await uploadVideo({
   file, title: 'My video', teamId: 'teamId',
   byteark: { formId, formSecret, projectKey },
-  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
+  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' },
   onProgress: (pct) =&gt; console.log(pct + '%'),
 });
 
-const cms = makeCmsContext({ baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' });
+const cms = makeCmsContext({ baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' });
 const fresh = await getVideoById(cms, video.id);</code></pre>
       </section>
 

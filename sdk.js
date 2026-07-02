@@ -11,7 +11,7 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
     const uploadManager = new CmsTwoSdk({
       teamId: 'teamId',
       byteark: { formId, formSecret, projectKey },
-      cms: { baseUrl: '<cms base url>', apiSecret: '<staging only>' },
+      cms: { baseUrl: '<cms base url>', apiSecret: 'apiSecret' },
 
       // Callback functions (all optional)
       onUploadProgress: (job, progress) => {},   // a video upload has progress ({ percent })

@@ -9,7 +9,7 @@ import { CmsTwoSdk } from './sdk.js';
 const uploadManager = new CmsTwoSdk({
   teamId: 'teamId',
   byteark: { formId, formSecret, projectKey },
-  cms: { baseUrl: '<cms base url>', apiSecret: '<staging only>' },
+  cms: { baseUrl: '<cms base url>', apiSecret: 'apiSecret' },
 
   // Callback functions (all optional)
   onUploadProgress: (job, progress) => console.log(job.name, progress.percent + '%'),

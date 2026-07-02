@@ -15,7 +15,6 @@ const setStatus = (text, kind = 'info') => {   // kind: 'info' | 'ok' | 'err'
 const uploader = (callbacks = {}) => new CmsTwoSdk({
   teamId: $('teamId').value.trim(),
   byteark: {
-    serviceEndpoint: $('serviceEndpoint').value.trim(),
     formId: $('formId').value.trim(),
     formSecret: $('formSecret').value.trim(),
     projectKey: $('projectKey').value.trim(),
@@ -67,7 +66,7 @@ async function handleUpload() {
     lastVideoKey = job.videoKey; $('refresh').disabled = false;   // enable manual refresh
     saveHistory();                // creds worked — remember them for next time
 
-    // Poll CMS-Two until the video is ready, then show the player from the API response.
+    // Poll Thai PBS Video CMS until the video is ready, then show the player from the API response.
     if ($('auto').checked) whenReadyShowPlayer(job.videoKey);
   } catch (err) {
     setStatus(t('status.error'), 'err'); log(String(err));
@@ -77,10 +76,10 @@ async function handleUpload() {
 }
 $('go').addEventListener('click', handleUpload);
 
-// ── preview box: placeholder ('empty'/'processing'), or the CMS-Two player ('embed') ──
+// ── preview box: placeholder ('empty'/'processing'), or the Thai PBS Video CMS player ('embed') ──
 function showPreview(state, url) {
   const frame = $('previewFrame'), empty = $('previewEmpty');
-  if (state === 'embed') {          // <iframe> player from the CMS-Two embeddedUrl
+  if (state === 'embed') {          // <iframe> player from the Thai PBS Video CMS embeddedUrl
     frame.src = url; frame.style.display = 'block'; empty.style.display = 'none';
   } else {                          // 'empty' | 'processing' — show the placeholder box
     frame.src = ''; frame.style.display = 'none'; empty.style.display = 'flex';
@@ -89,7 +88,7 @@ function showPreview(state, url) {
 }
 
 // Check the video every 5s; show "processing" until mediaVideoStatus is completed, then play
-// the CMS-Two player using the embeddedUrl from that same GET response.
+// the Thai PBS Video CMS player using the embeddedUrl from that same GET response.
 async function whenReadyShowPlayer(videoKey) {
   while (true) {
     const media = await uploader().getVideoByKey(videoKey);
@@ -107,7 +106,7 @@ async function whenReadyShowPlayer(videoKey) {
   }
 }
 
-// Refresh player: re-fetch the latest video from CMS-Two and show the player if it's ready.
+// Refresh player: re-fetch the latest video from Thai PBS Video CMS and show the player if it's ready.
 $('refresh').addEventListener('click', async () => {
   if (!lastVideoKey) return;
   const btn = $('refresh'); btn.disabled = true;
@@ -199,12 +198,11 @@ function renderLiveCode() {
 `import { CmsTwoSdk } from './sdk.js';
 
 const uploadManager = new CmsTwoSdk({
-  teamId: ${orPh('teamId', '<team ObjectId>')},
+  teamId: ${orPh('teamId', 'teamId')},
   byteark: {
     formId: ${orPh('formId', '<form id>')},
     formSecret: ${orPh('formSecret', '<form secret>')},
     projectKey: ${orPh('projectKey', '<project key>')},
-    serviceEndpoint: ${orPh('serviceEndpoint', 'https://stream.byteark.com')},
   },
   cms: {
     baseUrl: ${str(base)},

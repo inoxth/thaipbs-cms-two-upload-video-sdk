@@ -1,4 +1,4 @@
-// sdk.js — everything you need to upload a video into CMS-Two, in one file.
+// sdk.js — everything you need to upload a video into Thai PBS Video CMS, in one file.
 // Copy this file into your project — see the usage example below.
 // No dependencies: the ByteArk upload SDK is loaded from a CDN (jsDelivr serves the browser build).
 import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-upload-sdk@1.3.5/+esm';
@@ -9,15 +9,15 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
     import { CmsTwoSdk } from './sdk.js';
 
     const uploadManager = new CmsTwoSdk({
-      teamId: '<team ObjectId>',
-      byteark: { formId, formSecret, projectKey, serviceEndpoint: 'https://stream.byteark.com' },
+      teamId: 'teamId',
+      byteark: { formId, formSecret, projectKey },
       cms: { baseUrl: '<cms base url>', apiSecret: '<staging only>' },
 
       // Callback functions (all optional)
       onUploadProgress: (job, progress) => {},   // a video upload has progress ({ percent })
-      onUploadCompleted: (job) => {},            // a video's records now exist in CMS-Two
+      onUploadCompleted: (job) => {},            // a video's records now exist in Thai PBS Video CMS
       onUploadFailed: (job, error) => {},        // a video failed; the queue continues
-      onVideosCreated: (videoKeys) => {},        // all queued videos are created in CMS-Two
+      onVideosCreated: (videoKeys) => {},        // all queued videos are created in Thai PBS Video CMS
     });
 
     uploadManager.addUploadJobs(fileList);       // FileList, or [{ file, title, description, programId }]
@@ -45,11 +45,11 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
 export class CmsTwoSdk {
   constructor({
     teamId,
-    byteark,                     // { formId, formSecret, projectKey, serviceEndpoint }
+    byteark,                     // { formId, formSecret, projectKey }
     cms,                         // { baseUrl, apiSecret?, log? }
     // Callback functions (all optional)
     onUploadProgress,            // (job, progress) — progress: { percent }
-    onUploadCompleted,           // (job) — this job's media + video records exist in CMS-Two
+    onUploadCompleted,           // (job) — this job's media + video records exist in Thai PBS Video CMS
     onUploadFailed,              // (job, error) — this job failed; the queue continues
     onVideosCreated,             // (videoKeys) — after start() drains the queue
     onStatus,                    // (job, phase) — 'uploading' | 'creating-media' | 'creating-video'
@@ -148,7 +148,7 @@ export class CmsTwoSdk {
       then: (...a) => done.then(...a),
       catch: (...a) => done.catch(...a),
       finally: (...a) => done.finally(...a),
-      // poll CMS-Two until the video is processed; resolves with the media (has embeddedUrl)
+      // poll Thai PBS Video CMS until the video is processed; resolves with the media (has embeddedUrl)
       async whenReady({ intervalMs = 5000 } = {}) {
         const { videoKey } = await done;
         const cms = makeCmsContext(cmsOptions);
@@ -177,7 +177,7 @@ export class CmsTwoSdk {
 export async function uploadVideo({
   file, title, description, programId,
   teamId,
-  byteark,                     // { serviceEndpoint, formId, formSecret, projectKey }
+  byteark,                     // { formId, formSecret, projectKey }
   cms: cmsOptions,             // { baseUrl, apiSecret?, log? }
   onProgress = () => {},
   onStatus = () => {},
@@ -188,7 +188,7 @@ export async function uploadVideo({
   onStatus('uploading');
   const videoKey = await uploadToByteArkStream(byteark, file, { title }, onProgress);
 
-  // 2) register the file in the CMS-Two media library (webhook updates this record)
+  // 2) register the file in the Thai PBS Video CMS media library (webhook updates this record)
   onStatus('creating-media');
   const media = await createMediaVideo(cms, { videoKey, file, teamId });
 
@@ -200,23 +200,26 @@ export async function uploadVideo({
   return { videoKey, media, video };
 }
 
-// Build the context every CMS-Two call uses: { baseUrl, headers, log }.
+// Build the context every Thai PBS Video CMS call uses: { baseUrl, headers, log }.
 export function makeCmsContext({ baseUrl, apiSecret, log }) {
   return {
     baseUrl: baseUrl.replace(/\/$/, ''),
-    // Auth header for CMS-Two: optional on local (auto-auth), required on staging.
+    // Auth header for Thai PBS Video CMS: optional on local (auto-auth), required on staging.
     headers: apiSecret ? { 'x-api-server-secret': apiSecret } : {},
     log,
   };
 }
 
 // ── ByteArk Stream ──────────────────────────────────────────────────────────────────
-// Upload the file, resolve with its videoKey. `config` = { serviceEndpoint, formId, formSecret, projectKey }.
+// The media service endpoint is fixed — callers never need to set it.
+const BYTEARK_STREAM_ENDPOINT = 'https://stream.byteark.com';
+
+// Upload the file, resolve with its videoKey. `config` = { formId, formSecret, projectKey }.
 export function uploadToByteArkStream(config, file, { title }, onProgress) {
   return new Promise((resolve, reject) => {
     const manager = new VideoUploadManager({
       serviceName: 'byteark.stream',
-      serviceEndpoint: config.serviceEndpoint,
+      serviceEndpoint: BYTEARK_STREAM_ENDPOINT,
       formId: config.formId,
       formSecret: config.formSecret,
       projectKey: config.projectKey,
@@ -234,7 +237,7 @@ export function uploadToByteArkStream(config, file, { title }, onProgress) {
   });
 }
 
-// ── CMS-Two ─────────────────────────────────────────────────────────────────────────
+// ── Thai PBS Video CMS ─────────────────────────────────────────────────────────────────────────
 // Every call takes `cms` = { baseUrl, headers, log } (see makeCmsContext).
 async function postCmsTwo(cms, path, body) {
   cms.log?.('POST /api/v1' + path + ' →'); cms.log?.(body);
@@ -245,7 +248,7 @@ async function postCmsTwo(cms, path, body) {
   });
   const json = await res.json().catch(() => ({}));
   cms.log?.('  ' + res.status + ':'); cms.log?.(json);
-  if (!res.ok) throw new Error('CMS-Two ' + path + ' failed: ' + (json.errorMessage || res.status));
+  if (!res.ok) throw new Error('Thai PBS Video CMS ' + path + ' failed: ' + (json.errorMessage || res.status));
   return json;
 }
 

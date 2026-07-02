@@ -1,6 +1,6 @@
 // Tiny dev proxy for the ByteArk upload demo.
 //
-// Why: the demo page runs at http://localhost:8899 but wants to call the STAGING CMS-Two API.
+// Why: the demo page runs at http://localhost:8899 but wants to call the STAGING Thai PBS Video CMS API.
 // A browser can't do that directly — staging's CORS rejects this origin + the custom auth header.
 // So the browser calls THIS proxy same-origin (no CORS), and the proxy forwards to staging
 // server-to-server (CORS doesn't apply between servers), passing the x-api-server-secret header.

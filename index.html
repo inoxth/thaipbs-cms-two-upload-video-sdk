@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CMS-Two Video Upload SDK</title>
+  <title>Thai PBS Video CMS — Video Upload SDK</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -13,7 +13,7 @@
   <div class="docs">
     <!-- ── On this page ─────────────────────────────────────────────────────────── -->
     <aside class="sidebar">
-      <div class="sidebar-title">CMS-Two SDK</div>
+      <div class="sidebar-title">Thai PBS Video CMS SDK</div>
       <nav>
         <a href="#overview">Overview</a>
         <a href="#prerequisites">Before you start</a>
@@ -39,8 +39,8 @@
     <main class="content">
       <div class="content-head">
         <div>
-          <span class="kicker">CMS-Two</span>
-          <h1 data-i18n="app.title">CMS-Two Video Upload SDK</h1>
+          <span class="kicker">Thai PBS Video CMS</span>
+          <h1 data-i18n="app.title">Thai PBS Video CMS — Video Upload SDK</h1>
         </div>
         <div class="lang">
           <button type="button" data-lang="en">EN</button>
@@ -50,25 +50,43 @@
 
       <!-- ── Overview ───────────────────────────────────────────────────────────── -->
       <section id="overview">
-        <p class="lead" data-i18n="app.subtitle">Upload videos into CMS-Two from your own app — one class, no dependencies.</p>
-        <p>The video file lives on the media service; CMS-Two stores the metadata and a reference to it.
+        <p class="lead" data-i18n="app.subtitle">Upload videos into Thai PBS Video CMS from your own app — one class, no dependencies.</p>
+        <p>The video file lives on the media service; Thai PBS Video CMS stores the metadata and a reference to it.
            <code>CmsTwoSdk</code> does both in one flow: upload the file, register a <em>media-video</em>,
            then create the <em>video</em> record — and gives you callbacks + a status you can poll.</p>
         <div class="flow">
           <div class="node"><b data-i18n="flow.upload.title">Upload the file</b><span data-i18n="flow.upload.desc">The video file is stored by the media service</span></div>
           <div class="arrow">→</div>
-          <div class="node"><b>CMS-Two</b><span data-i18n="flow.cms.desc">Creates the video record + metadata</span></div>
+          <div class="node"><b>Thai PBS Video CMS</b><span data-i18n="flow.cms.desc">Creates the video record + metadata</span></div>
         </div>
       </section>
 
       <!-- ── Prerequisites ──────────────────────────────────────────────────────── -->
       <section id="prerequisites">
         <h2 data-i18n="doc.prereq.title">Before you start</h2>
-        <ul class="doc-list">
-          <li data-i18n="doc.prereq.item1">Uploader form credentials — formId, formSecret, and the projectKey of the target project.</li>
-          <li data-i18n="doc.prereq.item2">Your CMS-Two team ID (teamId).</li>
-          <li data-i18n="doc.prereq.item3">The CMS-Two base URL — plus the API secret (env API_SERVER_SECRET) when not on local dev.</li>
-        </ul>
+        <p>Where each value you pass to <code>new CmsTwoSdk({ ... })</code> comes from:</p>
+        <table class="params">
+          <thead><tr><th>Field</th><th>Where it comes from</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>byteark.formId</code><br /><code>byteark.formSecret</code><br /><code>byteark.projectKey</code></td>
+              <td>Contact the <strong>Thai PBS Video CMS</strong> team.</td>
+            </tr>
+            <tr>
+              <td><code>teamId</code></td>
+              <td>Your team's ID in Thai PBS Video CMS.</td>
+            </tr>
+            <tr>
+              <td><code>cms.baseUrl</code></td>
+              <td>Staging: <code>https://console-program-new.thaipbsbeta.com/</code><br />
+                  Production: <code>https://console-vod.thaipbs.or.th/</code></td>
+            </tr>
+            <tr>
+              <td><code>cms.apiSecret</code></td>
+              <td>Contact the <strong>Thai PBS Video CMS</strong> team.</td>
+            </tr>
+          </tbody>
+        </table>
       </section>
 
       <!-- ── Installation ───────────────────────────────────────────────────────── -->
@@ -82,13 +100,13 @@
       <!-- ── Quick start ────────────────────────────────────────────────────────── -->
       <section id="quickstart">
         <h2>Quick start</h2>
-        <p>Four steps from a picked file to a video in CMS-Two.</p>
+        <p>Four steps from a picked file to a video in Thai PBS Video CMS.</p>
 
         <h3 class="step"><span class="num">1</span> Initialize the SDK</h3>
         <p>Create one upload manager with your credentials and callbacks — reuse it for every upload.</p>
 <pre class="code" data-lang="javascript"><code>const uploadManager = new CmsTwoSdk({
-  teamId: '&lt;team ObjectId&gt;',
-  byteark: { formId, formSecret, projectKey, serviceEndpoint: 'https://stream.byteark.com' },
+  teamId: 'teamId',
+  byteark: { formId, formSecret, projectKey },
   cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
   onUploadProgress: (job, progress) =&gt; console.log(progress.percent + '%'),
   onUploadCompleted: (job) =&gt; console.log('created:', job.videoKey),
@@ -99,7 +117,7 @@
 <pre class="code" data-lang="javascript"><code>uploadManager.addUploadJobs([{ file, title: 'My video', description: 'demo' }]);</code></pre>
 
         <h3 class="step"><span class="num">3</span> Start uploading</h3>
-        <p>Runs the queue and creates the CMS-Two records. Resolves when every job is done.</p>
+        <p>Runs the queue and creates the Thai PBS Video CMS records. Resolves when every job is done.</p>
 <pre class="code" data-lang="javascript"><code>const [job] = await uploadManager.start();
 console.log(job.videoKey);   // the created video's key</code></pre>
 
@@ -126,19 +144,19 @@ player.src = media.embeddedUrl;</code></pre>
         <table class="params">
           <thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>teamId</code></td><td>string</td><td>CMS-Two team ObjectId that owns the video.</td></tr>
-            <tr><td><code>byteark</code></td><td>object</td><td><code>{ formId, formSecret, projectKey, serviceEndpoint }</code> — upload form credentials.</td></tr>
+            <tr><td><code>teamId</code></td><td>string</td><td>Thai PBS Video CMS team ObjectId that owns the video.</td></tr>
+            <tr><td><code>byteark</code></td><td>object</td><td><code>{ formId, formSecret, projectKey }</code> — upload form credentials.</td></tr>
             <tr><td><code>cms</code></td><td>object</td><td><code>{ baseUrl, apiSecret?, log? }</code>. <code>apiSecret</code> is optional on local (auto-auth), required elsewhere. <code>log</code> is an optional <code>(msg) =&gt; void</code>.</td></tr>
             <tr><td><code>onUploadProgress</code></td><td>function</td><td><code>(job, progress)</code> — a job's upload progressed. <code>progress = { percent }</code>.</td></tr>
-            <tr><td><code>onUploadCompleted</code></td><td>function</td><td><code>(job)</code> — a job's CMS-Two records now exist (<code>job.videoKey</code>, <code>job.media</code>, <code>job.video</code>).</td></tr>
+            <tr><td><code>onUploadCompleted</code></td><td>function</td><td><code>(job)</code> — a job's Thai PBS Video CMS records now exist (<code>job.videoKey</code>, <code>job.media</code>, <code>job.video</code>).</td></tr>
             <tr><td><code>onUploadFailed</code></td><td>function</td><td><code>(job, error)</code> — a job failed; the queue continues with the next one.</td></tr>
             <tr><td><code>onVideosCreated</code></td><td>function</td><td><code>(videoKeys)</code> — fired once after <code>start()</code> drains the queue, with every created key.</td></tr>
             <tr><td><code>onStatus</code></td><td>function</td><td><code>(job, phase)</code> — phase is <code>'uploading' | 'creating-media' | 'creating-video'</code>.</td></tr>
           </tbody>
         </table>
 <pre class="code" data-lang="javascript"><code>const uploadManager = new CmsTwoSdk({
-  teamId: '&lt;team ObjectId&gt;',
-  byteark: { formId, formSecret, projectKey, serviceEndpoint: 'https://stream.byteark.com' },
+  teamId: 'teamId',
+  byteark: { formId, formSecret, projectKey },
   cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
   onUploadProgress: (job, progress) =&gt; console.log(job.name, progress.percent + '%'),
   onUploadCompleted: (job) =&gt; console.log('created:', job.videoKey),
@@ -247,7 +265,7 @@ player.src = ready.embeddedUrl;</code></pre>
             <tr><td><code>status</code></td><td>string</td><td><code>'pending' → 'uploading' → 'creating-media' → 'creating-video' → 'completed'</code> (or <code>'failed'</code>).</td></tr>
             <tr><td><code>progress</code></td><td>object</td><td><code>{ percent }</code> — upload progress.</td></tr>
             <tr><td><code>videoKey</code></td><td>string</td><td>The key from the media service (set after upload).</td></tr>
-            <tr><td><code>media</code> / <code>video</code></td><td>object</td><td>The created CMS-Two records (set after each step).</td></tr>
+            <tr><td><code>media</code> / <code>video</code></td><td>object</td><td>The created Thai PBS Video CMS records (set after each step).</td></tr>
           </tbody>
         </table>
       </section>
@@ -272,8 +290,8 @@ player.src = ready.embeddedUrl;</code></pre>
 <pre class="code" data-lang="javascript"><code>import { uploadVideo, makeCmsContext, getMediaVideoByKey } from './sdk.js';
 
 const { videoKey } = await uploadVideo({
-  file, title: 'My video', teamId: '&lt;team ObjectId&gt;',
-  byteark: { formId, formSecret, projectKey, serviceEndpoint: 'https://stream.byteark.com' },
+  file, title: 'My video', teamId: 'teamId',
+  byteark: { formId, formSecret, projectKey },
   cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
   onProgress: (pct) =&gt; console.log(pct + '%'),
 });
@@ -297,12 +315,11 @@ const media = await getMediaVideoByKey(cms, videoKey);</code></pre>
         </div>
         <div class="row">
           <div><label>Project Key</label><input id="projectKey" placeholder="project key" /></div>
-          <div><label>Service Endpoint</label><input id="serviceEndpoint" value="https://stream.byteark.com" /></div>
         </div>
       </section>
 
       <section class="card">
-        <h3><span class="num">2</span> CMS-Two</h3>
+        <h3><span class="num">2</span> Thai PBS Video CMS</h3>
         <div class="row">
           <div><label data-i18n="label.baseUrl">Base URL</label>
             <select id="cmsBase">
@@ -333,12 +350,12 @@ const media = await getMediaVideoByKey(cms, videoKey);</code></pre>
         <label data-i18n="label.title">Title</label><input id="title" placeholder="video title" />
         <label data-i18n="label.description">Description</label><input id="description" placeholder="video description" />
         <label data-i18n="label.file">Video file</label><input id="file" type="file" accept="video/*" />
-        <p class="hint" data-i18n="hint.video">One click: uploads the file → registers the media in CMS-Two → creates the video record.</p>
+        <p class="hint" data-i18n="hint.video">One click: uploads the file → registers the media in Thai PBS Video CMS → creates the video record.</p>
       </section>
 
       <label class="toggle">
         <input type="checkbox" id="auto" checked />
-        <span data-i18n="toggle.autoRefresh">Auto-refresh the preview to the CMS-Two player once the video is ready</span>
+        <span data-i18n="toggle.autoRefresh">Auto-refresh the preview to the Thai PBS Video CMS player once the video is ready</span>
       </label>
       <button id="go" class="btn-primary" data-i18n="btn.upload">Upload video</button>
 
@@ -353,7 +370,7 @@ const media = await getMediaVideoByKey(cms, videoKey);</code></pre>
         <iframe id="previewFrame" allow="autoplay; fullscreen" allowfullscreen style="display:none"></iframe>
         <div id="previewEmpty" class="empty" data-i18n="preview.empty">No video yet — upload one to preview</div>
       </div>
-      <p class="hint" data-i18n="hint.preview">The CMS-Two player appears here once the video is ready.</p>
+      <p class="hint" data-i18n="hint.preview">The Thai PBS Video CMS player appears here once the video is ready.</p>
 
       <div class="section-title" data-i18n="section.log">Log</div>
       <pre id="log" data-i18n="log.ready">Ready.</pre>

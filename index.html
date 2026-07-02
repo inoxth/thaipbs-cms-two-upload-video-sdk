@@ -25,7 +25,7 @@
         <a href="#start">start()</a>
         <a href="#getJobQueue">getJobQueue()</a>
         <a href="#upload">upload()</a>
-        <a href="#getVideoByKey">getVideoByKey()</a>
+        <a href="#getVideoById">getVideoById()</a>
         <a href="#listPrograms">listPrograms()</a>
         <div class="nav-group">Types</div>
         <a href="#job">Job</a>
@@ -123,12 +123,12 @@ console.log(job.videoKey);   // the created video's key</code></pre>
 
         <h3 class="step"><span class="num">4</span> Wait until it's playable</h3>
         <p>The file keeps processing after upload — poll until <code>completed</code>, then use <code>embeddedUrl</code>.</p>
-<pre class="code" data-lang="javascript"><code>let media = await uploadManager.getVideoByKey(job.videoKey);
-while (media.mediaVideoStatus !== 'completed') {
+<pre class="code" data-lang="javascript"><code>let video = await uploadManager.getVideoById(job.video.id);
+while (video.mediaVideo.mediaVideoStatus !== 'completed') {
   await new Promise((r) =&gt; setTimeout(r, 5000));
-  media = await uploadManager.getVideoByKey(job.videoKey);
+  video = await uploadManager.getVideoById(job.video.id);
 }
-player.src = media.embeddedUrl;</code></pre>
+player.src = video.mediaVideo.embeddedUrl;</code></pre>
 
         <p class="hint">Uploading a single file? <a href="#upload"><code>upload(file)</code></a> does steps 2–4 in one call and returns an awaitable handle.</p>
       </section>
@@ -230,19 +230,77 @@ const ready = await myVideo.whenReady();   // playable
 player.src = ready.embeddedUrl;</code></pre>
       </section>
 
-      <!-- getVideoByKey -->
-      <section id="getVideoByKey" class="ref">
-        <h3><code>getVideoByKey(videoKey)</code> <span class="badge">async → media</span></h3>
-        <p>Fetch a media-video by its key. After upload the file is still processing; poll this until
-           <code>mediaVideoStatus === 'completed'</code>, then use <code>embeddedUrl</code> to play it.</p>
+      <!-- getVideoById -->
+      <section id="getVideoById" class="ref">
+        <h3><code>getVideoById(videoId)</code> <span class="badge">async → Video</span></h3>
+        <p>Fetch a video by its id (<code>GET /api/v1/videos/:videoId</code>) — use <code>job.video.id</code>
+           from the upload. Returns the full video record. The transcoding status and player URL live
+           under <code>mediaVideo</code>; poll until <code>mediaVideo.mediaVideoStatus === 'completed'</code>,
+           then play <code>mediaVideo.embeddedUrl</code>.</p>
+        <p class="hint">Note: the top-level <code>mediaStatus</code> is the <em>publish</em> status (e.g. <code>draft</code>), not the transcoding status.</p>
+        <p><strong>Video</strong> — top-level fields:</p>
         <table class="params">
-          <thead><tr><th>Returns</th><th>Description</th></tr></thead>
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>mediaVideoStatus</code></td><td><code>'pending' → 'processing' → 'completed'</code> (a webhook updates it). Or <code>'failed'</code>.</td></tr>
-            <tr><td><code>embeddedUrl</code></td><td>Player URL, usable once completed.</td></tr>
+            <tr><td><code>id</code></td><td>string</td><td>Video record id.</td></tr>
+            <tr><td><code>teamId</code></td><td>string</td><td>Owning team.</td></tr>
+            <tr><td><code>slugCode</code></td><td>string</td><td>URL slug.</td></tr>
+            <tr><td><code>referenceKey</code></td><td>string | null</td><td>Optional external reference.</td></tr>
+            <tr><td><code>programId</code> / <code>seasonId</code> / <code>episodeId</code></td><td>string | null</td><td>Linked program / season / episode.</td></tr>
+            <tr><td><code>title</code></td><td>string</td><td>Video title.</td></tr>
+            <tr><td><code>tagline</code></td><td>string</td><td>The description you sent is stored here.</td></tr>
+            <tr><td><code>description</code></td><td>string</td><td>Long description.</td></tr>
+            <tr><td><code>images</code> / <code>attachments</code></td><td>EmbeddedMedia[]</td><td>Attached media.</td></tr>
+            <tr><td><code>galleryId</code></td><td>string | null</td><td>Linked gallery.</td></tr>
+            <tr><td><code>isUsingEpisodeMetadata</code></td><td>boolean</td><td>Inherits metadata from its episode.</td></tr>
+            <tr><td><code>skipIntroToSeconds</code></td><td>number | null</td><td>Intro-skip point.</td></tr>
+            <tr><td><code>durationSeconds</code></td><td>number</td><td>Duration (filled after transcoding).</td></tr>
+            <tr><td><code>mediaStatus</code></td><td>string</td><td><strong>Publish</strong> status (e.g. <code>'draft'</code>) — <em>not</em> the transcoding status.</td></tr>
+            <tr><td><code>mediaAvailabledAt</code></td><td>string | null</td><td>ISO date-time.</td></tr>
+            <tr><td><code>mp4MediaStatus</code> / <code>mp4MediaAvailabledAt</code></td><td>string / date | null</td><td>MP4 rendition status.</td></tr>
+            <tr><td><code>mp4MediaUrl</code></td><td>string | null</td><td>MP4 URL when available.</td></tr>
+            <tr><td><code>mediaVideo</code></td><td>object</td><td><strong>The uploaded file — transcoding status + player URL live here (see below).</strong></td></tr>
+            <tr><td><code>publishStatus</code> / <code>publishType</code></td><td>string</td><td>Publish state + type.</td></tr>
+            <tr><td><code>publishedAt</code> / <code>unpublishedAt</code></td><td>string | null</td><td>Publish window.</td></tr>
+            <tr><td><code>firstAiredAt</code> / <code>firstAiredEndedAt</code></td><td>string | null</td><td>Broadcast times.</td></tr>
+            <tr><td><code>liveBoardcastingStatus</code> / <code>…Mode</code></td><td>string | null</td><td>Live-broadcast state.</td></tr>
+            <tr><td><code>ogTitle</code> / <code>ogDescription</code> / <code>seoTitle</code> / <code>seoDescription</code></td><td>string</td><td>SEO / social metadata.</td></tr>
+            <tr><td><code>terms</code></td><td>object</td><td>Custom-field term values (<code>Record&lt;string, unknown&gt;</code>).</td></tr>
+            <tr><td><code>additionalFields</code></td><td>object[]</td><td>Custom fields — <code>{ key, value }</code>.</td></tr>
+            <tr><td><code>relatedTerms</code></td><td>object[]</td><td>Taxonomy attachments — <code>{ key, docId }</code>.</td></tr>
+            <tr><td><code>program</code> / <code>season</code></td><td>object | null</td><td><code>{ id, title, slugCode, type, skipIntroToSeconds }</code>.</td></tr>
+            <tr><td><code>episode</code> / <code>gallery</code></td><td>object | null</td><td>Populated relations.</td></tr>
+            <tr><td><code>creatorId</code> / <code>updaterId</code></td><td>string</td><td>Who created / last updated.</td></tr>
+            <tr><td><code>creator</code> / <code>updater</code></td><td>Account | null</td><td>Populated accounts.</td></tr>
+            <tr><td><code>legacyId</code></td><td>string | null</td><td>Legacy CMS id.</td></tr>
+            <tr><td><code>canonicalUrl</code> / <code>previewUrl</code></td><td>string</td><td>Public URLs (when set).</td></tr>
+            <tr><td><code>deleted</code> / <code>deletedAt</code></td><td>boolean / string</td><td>Soft-delete flags.</td></tr>
+            <tr><td><code>createdAt</code> / <code>updatedAt</code></td><td>string</td><td>ISO timestamps.</td></tr>
           </tbody>
         </table>
-<pre class="code" data-lang="javascript"><code>const { mediaVideoStatus, embeddedUrl } = await uploadManager.getVideoByKey(videoKey);</code></pre>
+
+        <p><strong>video.mediaVideo</strong> — the uploaded file (poll this):</p>
+        <table class="params">
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code></td><td>string</td><td>Media record id.</td></tr>
+            <tr><td><code>key</code></td><td>string</td><td>The ByteArk videoKey.</td></tr>
+            <tr><td><code>sourceType</code></td><td>string</td><td><code>'stream'</code>.</td></tr>
+            <tr><td><code>externalId</code></td><td>string | null</td><td>Source-system id, if any.</td></tr>
+            <tr><td><code>filename</code> / <code>originalFilename</code></td><td>string</td><td>File name.</td></tr>
+            <tr><td><code>useFor</code></td><td>string</td><td><code>'video'</code>.</td></tr>
+            <tr><td><code>parentFolderId</code></td><td>string | null</td><td>Library folder.</td></tr>
+            <tr><td><code>durationSeconds</code></td><td>number</td><td>Duration once known.</td></tr>
+            <tr><td><code>mediaVideoStatus</code></td><td>string</td><td><strong>Transcoding status</strong> — <code>'pending' → 'processing' → 'completed'</code> (or <code>'failed'</code>). Poll this.</td></tr>
+            <tr><td><code>mediaVideoAvailabledAt</code></td><td>string | null</td><td>Set when ready.</td></tr>
+            <tr><td><code>coverImageUrl</code></td><td>string | null</td><td>Cover image.</td></tr>
+            <tr><td><code>embeddedUrl</code></td><td>string</td><td><strong>Player URL</strong> — use once completed.</td></tr>
+            <tr><td><code>mediaUrl</code></td><td>string</td><td>Stream / playlist URL.</td></tr>
+            <tr><td><code>createdAt</code> / <code>updatedAt</code></td><td>string</td><td>ISO timestamps.</td></tr>
+          </tbody>
+        </table>
+<pre class="code" data-lang="javascript"><code>const video = await uploadManager.getVideoById(job.video.id);
+const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
       </section>
 
       <!-- listPrograms -->
@@ -283,13 +341,13 @@ player.src = ready.embeddedUrl;</code></pre>
             <tr><td><code>uploadToByteArkStream(config, file, { title }, onProgress)</code></td><td>Upload the file only; resolves with the <code>videoKey</code>.</td></tr>
             <tr><td><code>createMediaVideo(cms, { videoKey, file, teamId })</code></td><td>Register the media-video (<code>POST /media/files</code>). Returns the media.</td></tr>
             <tr><td><code>createVideo(cms, { media, teamId, title, tagline, programId })</code></td><td>Create the video record (<code>POST /videos</code>), linked to the media. Returns the video.</td></tr>
-            <tr><td><code>getMediaVideoByKey(cms, videoKey)</code></td><td>Fetch a media-video by key (status + <code>embeddedUrl</code>).</td></tr>
+            <tr><td><code>getVideoById(cms, videoId)</code></td><td>Fetch a video (<code>GET /videos/:videoId</code>); status + <code>embeddedUrl</code> are under <code>video.mediaVideo</code>.</td></tr>
             <tr><td><code>listPrograms(cms, teamId)</code></td><td>List a team's programs.</td></tr>
           </tbody>
         </table>
-<pre class="code" data-lang="javascript"><code>import { uploadVideo, makeCmsContext, getMediaVideoByKey } from './sdk.js';
+<pre class="code" data-lang="javascript"><code>import { uploadVideo, makeCmsContext, getVideoById } from './sdk.js';
 
-const { videoKey } = await uploadVideo({
+const { video } = await uploadVideo({
   file, title: 'My video', teamId: 'teamId',
   byteark: { formId, formSecret, projectKey },
   cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' },
@@ -297,7 +355,7 @@ const { videoKey } = await uploadVideo({
 });
 
 const cms = makeCmsContext({ baseUrl: '&lt;cms base url&gt;', apiSecret: '&lt;staging only&gt;' });
-const media = await getMediaVideoByKey(cms, videoKey);</code></pre>
+const fresh = await getVideoById(cms, video.id);</code></pre>
       </section>
 
       <!-- ═══════════════════════════════ LIVE DEMO ═══════════════════════════════ -->

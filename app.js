@@ -1,5 +1,5 @@
 // app.js — the demo UI. Integration-wise it does exactly what your app would do:
-// construct a CmsTwoSdk, addUploadJobs(), start(), and check getVideoByKey() until ready.
+// construct a CmsTwoSdk, addUploadJobs(), start(), and check getVideoById() until ready.
 import { CmsTwoSdk } from './sdk.js';
 import { t, initI18n } from './i18n.js';
 
@@ -25,7 +25,7 @@ const uploader = (callbacks = {}) => new CmsTwoSdk({
 
 // ── main flow: ONE call to the SDK does upload → create media → create video ─────────
 let busy = false;
-let lastVideoKey = null;   // the most recent upload, so "Refresh player" can re-check it
+let lastVideoId = null;    // the most recent upload's video id, so "Refresh player" can re-check it
 async function handleUpload() {
   if (busy) return;
   const file = $('file').files[0];
@@ -62,12 +62,12 @@ async function handleUpload() {
     const [job] = await uploadManager.start();   // resolves when the queue is drained
     if (job.status !== 'completed') return;      // failure already shown by onUploadFailed
 
-    log('video key: ' + job.videoKey);
-    lastVideoKey = job.videoKey; $('refresh').disabled = false;   // enable manual refresh
+    log('video id: ' + job.video.id + '  (key: ' + job.videoKey + ')');
+    lastVideoId = job.video.id; $('refresh').disabled = false;   // enable manual refresh
     saveHistory();                // creds worked — remember them for next time
 
     // Poll Thai PBS Video CMS until the video is ready, then show the player from the API response.
-    if ($('auto').checked) whenReadyShowPlayer(job.videoKey);
+    if ($('auto').checked) whenReadyShowPlayer(job.video.id);
   } catch (err) {
     setStatus(t('status.error'), 'err'); log(String(err));
   } finally {
@@ -89,12 +89,12 @@ function showPreview(state, url) {
 
 // Check the video every 5s; show "processing" until mediaVideoStatus is completed, then play
 // the Thai PBS Video CMS player using the embeddedUrl from that same GET response.
-async function whenReadyShowPlayer(videoKey) {
+async function whenReadyShowPlayer(videoId) {
   while (true) {
-    const media = await uploader().getVideoByKey(videoKey);
-    const status = media?.mediaVideoStatus;
+    const video = await uploader().getVideoById(videoId);
+    const status = video?.mediaVideo?.mediaVideoStatus;
     if (status === 'completed') {
-      showPreview('embed', media.embeddedUrl);
+      showPreview('embed', video.mediaVideo.embeddedUrl);
       setStatus(t('status.ready'), 'ok');
       return;
     }
@@ -108,16 +108,17 @@ async function whenReadyShowPlayer(videoKey) {
 
 // Refresh player: re-fetch the latest video from Thai PBS Video CMS and show the player if it's ready.
 $('refresh').addEventListener('click', async () => {
-  if (!lastVideoKey) return;
+  if (!lastVideoId) return;
   const btn = $('refresh'); btn.disabled = true;
   try {
-    const media = await uploader().getVideoByKey(lastVideoKey);
-    if (media?.mediaVideoStatus === 'completed') {
-      showPreview('embed', media.embeddedUrl);
+    const video = await uploader().getVideoById(lastVideoId);
+    const status = video?.mediaVideo?.mediaVideoStatus;
+    if (status === 'completed') {
+      showPreview('embed', video.mediaVideo.embeddedUrl);
       setStatus(t('status.ready'), 'ok');
     } else {
       showPreview('processing');
-      setStatus(t('status.processing', media?.mediaVideoStatus), 'info');
+      setStatus(t('status.processing', status), 'info');
     }
   } finally { btn.disabled = false; }
 });

@@ -19,10 +19,11 @@ const uploadManager = new CmsTwoSdk({
 });
 
 uploadManager.addUploadJobs(fileList);     // FileList, or [{ file, title, description, programId }]
-await uploadManager.start();               // resolves when the queue is drained
+const [job] = await uploadManager.start(); // resolves when the queue is drained
 
 // later — poll until a video is playable:
-const { mediaVideoStatus, embeddedUrl } = await uploadManager.getVideoByKey(videoKey);
+const video = await uploadManager.getVideoById(job.video.id);
+const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;
 // mediaVideoStatus: 'pending' → 'processing' → 'completed'
 ```
 
@@ -32,7 +33,7 @@ Single-file shortcut — `upload()` returns an awaitable job handle:
 const myVideo = uploadManager.upload(file, { title: 'My video' });
 myVideo.onProgress((pct) => console.log(pct + '%'));
 const { videoKey } = await myVideo;        // records created
-const ready = await myVideo.whenReady();   // playable (has embeddedUrl)
+const ready = await myVideo.whenReady();   // playable (ready.mediaVideo.embeddedUrl)
 ```
 
 What each queued job does:
@@ -42,8 +43,8 @@ What each queued job does:
 3. Creates the **video** record with the metadata (`POST /api/v1/videos`), linked to the media.
 
 `start()` resolves as soon as every job's records exist; processing continues on the media
-service. Poll `uploadManager.getVideoByKey(videoKey)` (or `myVideo.whenReady()`) until
-`mediaVideoStatus` is `completed`.
+service. Poll `uploadManager.getVideoById(job.video.id)` (or `myVideo.whenReady()`) until
+`video.mediaVideo.mediaVideoStatus` is `completed`.
 
 ## Files
 - `sdk.js` — **the file you copy**: the `CmsTwoSdk` class + every Thai PBS Video CMS call. No DOM, no dependencies.

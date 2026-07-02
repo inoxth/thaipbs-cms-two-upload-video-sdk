@@ -21,19 +21,20 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
     });
 
     uploadManager.addUploadJobs(fileList);       // FileList, or [{ file, title, description, programId }]
-    await uploadManager.start();                 // resolves when the queue is drained
+    const [job] = await uploadManager.start();   // resolves when the queue is drained
 
   Then poll until a video is playable (a webhook flips its status while it processes):
 
-    const { mediaVideoStatus, embeddedUrl } = await uploadManager.getVideoByKey(videoKey);
-    // mediaVideoStatus: 'pending' → 'processing' → 'completed'
+    const video = await uploadManager.getVideoById(job.video.id);
+    // video.mediaVideo.mediaVideoStatus: 'pending' → 'processing' → 'completed'
+    // video.mediaVideo.embeddedUrl: player URL once completed
 
   Single-file shortcut — upload() returns an awaitable job handle:
 
     const myVideo = uploadManager.upload(file, { title: 'My video' });
     myVideo.onProgress((pct) => console.log(pct + '%'));
     const { videoKey } = await myVideo;          // records created
-    const ready = await myVideo.whenReady();     // playable (has embeddedUrl)
+    const ready = await myVideo.whenReady();     // playable (ready.mediaVideo.embeddedUrl)
 
   `file` is a File object (from an <input type="file"> or drag-and-drop) — browsers can't
   read filesystem paths.
@@ -148,23 +149,23 @@ export class CmsTwoSdk {
       then: (...a) => done.then(...a),
       catch: (...a) => done.catch(...a),
       finally: (...a) => done.finally(...a),
-      // poll Thai PBS Video CMS until the video is processed; resolves with the media (has embeddedUrl)
+      // poll Thai PBS Video CMS until processed; resolves with the video (mediaVideo.embeddedUrl)
       async whenReady({ intervalMs = 5000 } = {}) {
-        const { videoKey } = await done;
+        const { video } = await done;
         const cms = makeCmsContext(cmsOptions);
         while (true) {
-          const media = await getMediaVideoByKey(cms, videoKey);
-          if (media?.mediaVideoStatus === 'completed') return media;
-          if (media?.mediaVideoStatus === 'failed') throw new Error('Video processing failed');
+          const v = await getVideoById(cms, video.id);
+          if (v?.mediaVideo?.mediaVideoStatus === 'completed') return v;
+          if (v?.mediaVideo?.mediaVideoStatus === 'failed') throw new Error('Video processing failed');
           await new Promise((r) => setTimeout(r, intervalMs));
         }
       },
     };
   }
 
-  // Look up a video by its key (mediaVideoStatus tells you if it's playable yet).
-  getVideoByKey(videoKey) {
-    return getMediaVideoByKey(makeCmsContext(this.cmsOptions), videoKey);
+  // Look up a video by its id. mediaVideo.mediaVideoStatus tells you if it's playable yet.
+  getVideoById(videoId) {
+    return getVideoById(makeCmsContext(this.cmsOptions), videoId);
   }
 
   // List this team's programs (for linking a video to a program).
@@ -309,9 +310,9 @@ export async function createVideo(cms, { media, teamId, title, tagline, programI
   return json.videos[0];
 }
 
-// Look up a media-video by its ByteArk key (poll this until mediaVideoStatus is 'completed').
-export async function getMediaVideoByKey(cms, videoKey) {
-  const res = await fetch(cms.baseUrl + '/api/v1/media/files/key:' + videoKey, { headers: cms.headers });
+// Look up a video by its id (poll until video.mediaVideo.mediaVideoStatus is 'completed').
+export async function getVideoById(cms, videoId) {
+  const res = await fetch(cms.baseUrl + '/api/v1/videos/' + videoId, { headers: cms.headers });
   return res.json();
 }
 

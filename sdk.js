@@ -9,9 +9,13 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
     import { CmsTwoSdk } from './sdk.js';
 
     const uploadManager = new CmsTwoSdk({
-      teamId: 'teamId',
       byteark: { formId, formSecret, projectKey },
-      cms: { baseUrl: '<cms base url>', apiSecret: 'apiSecret' },
+      cms: {
+        baseUrl:  '<cms base url>',
+        accessId: '<accessId>',   // public — identifies your key
+        secret:   '<secret>',     // signs short-lived appTokens locally; never sent over the wire
+      },
+      // NOTE: no teamId — it's derived from your key when the SDK exchanges a token.
 
       // Callback functions (all optional)
       onUploadProgress: (job, progress) => {},   // a video upload has progress ({ percent })
@@ -38,6 +42,14 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
 
   `file` is a File object (from an <input type="file"> or drag-and-drop) — browsers can't
   read filesystem paths.
+
+  How auth works (ByteArk-style, so nothing dangerous is ever on the wire):
+    - Your `secret` stays in the browser and is used ONLY to sign a short-lived appToken locally.
+    - The SDK POSTs that appToken to /api/v1/upload-tokens and gets back a 5-min accessToken
+      (+ your team). Only tokens ever cross the network — never the raw `secret`.
+    - The accessToken is sent in the `x-upload-token` header on the two write calls (a custom
+      header, not Authorization, so the API gateway doesn't intercept it), cached, and re-minted
+      automatically when it expires (or on a 401). Polling the public GET sends no token.
 */
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -45,9 +57,8 @@ import { VideoUploadManager } from 'https://cdn.jsdelivr.net/npm/@byteark/video-
 // ════════════════════════════════════════════════════════════════════════════════════
 export class CmsTwoSdk {
   constructor({
-    teamId,
     byteark,                     // { formId, formSecret, projectKey }
-    cms,                         // { baseUrl, apiSecret?, log? }
+    cms,                         // { baseUrl, accessId, secret, log? }
     // Callback functions (all optional)
     onUploadProgress,            // (job, progress) — progress: { percent }
     onUploadCompleted,           // (job) — this job's media + video records exist in Thai PBS Video CMS
@@ -55,9 +66,9 @@ export class CmsTwoSdk {
     onVideosCreated,             // (videoIds) — Thai PBS Video CMS video ids, after start() drains the queue
     onStatus,                    // (job, phase) — 'uploading' | 'creating-media' | 'creating-video'
   }) {
-    this.teamId = teamId;
     this.byteark = byteark;
-    this.cmsOptions = cms;
+    // One context per SDK instance, so the exchanged accessToken + teamId are cached across calls.
+    this.cms = makeCmsContext(cms);
     this.callbacks = { onUploadProgress, onUploadCompleted, onUploadFailed, onVideosCreated, onStatus };
     this.jobQueue = [];
   }
@@ -88,11 +99,18 @@ export class CmsTwoSdk {
     if (this.running) return this.running;
     this.running = (async () => {
       const cb = this.callbacks;
+      const cms = this.cms;
       const createdVideoIds = [];
       let job;
       // ponytail: serial queue — one upload at a time; add concurrency if throughput matters.
       while ((job = this.jobQueue.find((j) => j.status === 'pending'))) {
         try {
+          // Validate the credential FIRST — mint (or reuse a cached) accessToken before
+          // touching ByteArk, so a bad accessId/secret fails here and never leaves an
+          // orphaned video in the stream. Cached across jobs; re-minted later if it expires
+          // during a long upload (authedPost re-mints on expiry / retries once on 401).
+          await getAuth(cms);
+
           job.status = 'uploading'; cb.onStatus?.(job, 'uploading');
           // videoKey is the raw ByteArk key — kept internal; the dev works with job.video / job.media.
           const videoKey = await uploadToByteArkStream(this.byteark, job.file, { title: job.title }, (pct) => {
@@ -100,13 +118,12 @@ export class CmsTwoSdk {
             cb.onUploadProgress?.(job, job.progress);
           });
 
-          const cms = makeCmsContext(this.cmsOptions);
           job.status = 'creating-media'; cb.onStatus?.(job, 'creating-media');
-          job.media = await createMediaVideo(cms, { videoKey, file: job.file, teamId: this.teamId });
+          job.media = await createMediaVideo(cms, { videoKey, file: job.file });
 
           job.status = 'creating-video'; cb.onStatus?.(job, 'creating-video');
           job.video = await createVideo(cms, {
-            media: job.media, teamId: this.teamId,
+            media: job.media,
             title: job.title, tagline: job.description, programId: job.programId,
           });
 
@@ -135,14 +152,13 @@ export class CmsTwoSdk {
       title: title || file.name,
       description,
       programId,
-      teamId: this.teamId,
       byteark: this.byteark,
-      cms: this.cmsOptions,
+      cms: this.cms,
       onProgress: (pct) => listeners.progress.forEach((fn) => fn(pct)),
       onStatus: (phase) => listeners.status.forEach((fn) => fn(phase)),
     }));
 
-    const cmsOptions = this.cmsOptions;
+    const cms = this.cms;
     return {
       onProgress(fn) { listeners.progress.push(fn); return this; },
       onStatus(fn) { listeners.status.push(fn); return this; },
@@ -153,7 +169,6 @@ export class CmsTwoSdk {
       // poll Thai PBS Video CMS until processed; resolves with the video (mediaVideo.embeddedUrl)
       async whenReady({ intervalMs = 5000 } = {}) {
         const { video } = await done;
-        const cms = makeCmsContext(cmsOptions);
         while (true) {
           const v = await getVideoById(cms, video.id);
           if (v?.mediaVideo?.mediaVideoStatus === 'completed') return v;
@@ -166,25 +181,30 @@ export class CmsTwoSdk {
 
   // Look up a video by its id. mediaVideo.mediaVideoStatus tells you if it's playable yet.
   getVideoById(videoId) {
-    return getVideoById(makeCmsContext(this.cmsOptions), videoId);
+    return getVideoById(this.cms, videoId);
   }
 
-  // List this team's programs (for linking a video to a program).
+  // List this key's team's programs (for linking a video to a program). The team is derived
+  // from your key (via the token exchange), so you don't pass a teamId.
   listPrograms() {
-    return listPrograms(makeCmsContext(this.cmsOptions), this.teamId);
+    return listPrograms(this.cms);
   }
 }
 
 // ── the underlying one-shot function (CmsTwoSdk.upload wraps this) ───────────────────
 export async function uploadVideo({
   file, title, description, programId,
-  teamId,
   byteark,                     // { formId, formSecret, projectKey }
-  cms: cmsOptions,             // { baseUrl, apiSecret?, log? }
+  cms: cmsOptions,             // { baseUrl, accessId, secret, log? }  — or an already-built context
   onProgress = () => {},
   onStatus = () => {},
 }) {
-  const cms = makeCmsContext(cmsOptions);
+  // Accept either raw options or a prepared context (CmsTwoSdk passes its cached context).
+  const cms = cmsOptions && cmsOptions.__cmsContext ? cmsOptions : makeCmsContext(cmsOptions);
+
+  // 0) validate the credential first — mint the accessToken BEFORE the ByteArk upload, so a
+  // bad accessId/secret throws here and never creates an orphaned video in the stream.
+  await getAuth(cms);
 
   // 1) upload the file to the media service (videoKey is the raw ByteArk key — used only internally)
   onStatus('uploading');
@@ -192,24 +212,84 @@ export async function uploadVideo({
 
   // 2) register the file in the Thai PBS Video CMS media library (webhook updates this record)
   onStatus('creating-media');
-  const media = await createMediaVideo(cms, { videoKey, file, teamId });
+  const media = await createMediaVideo(cms, { videoKey, file });
 
   // 3) create the Video record with the metadata (title / description / program)
   onStatus('creating-video');
-  const video = await createVideo(cms, { media, teamId, title, tagline: description, programId });
+  const video = await createVideo(cms, { media, title, tagline: description, programId });
 
   onStatus('done');
   return { media, video };
 }
 
-// Build the context every Thai PBS Video CMS call uses: { baseUrl, headers, log }.
-export function makeCmsContext({ baseUrl, apiSecret, log }) {
+// ════════════════════════════════════════════════════════════════════════════════════
+//  Auth — sign an appToken locally, exchange it for a short-lived accessToken, cache it
+// ════════════════════════════════════════════════════════════════════════════════════
+
+// Build the context every Thai PBS Video CMS call uses. Holds the credentials + a token cache.
+export function makeCmsContext({ baseUrl, accessId, secret, log }) {
   return {
+    __cmsContext: true,
     baseUrl: baseUrl.replace(/\/$/, ''),
-    // Auth header for Thai PBS Video CMS: optional on local (auto-auth), required on staging.
-    headers: apiSecret ? { 'x-api-server-secret': apiSecret } : {},
+    accessId,
+    secret,
     log,
+    _auth: null,                 // { accessToken, teamId, expiresAtMs } — populated by getAuth()
   };
+}
+
+function base64url(bytes) {
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Sign a short-lived appToken (HS256) with the key's secret — entirely in the browser, using
+// WebCrypto. The raw secret is used to sign but never leaves the page.
+async function signAppToken(secret) {
+  const enc = new TextEncoder();
+  const now = Math.floor(Date.now() / 1000);
+  const segment = (obj) => base64url(enc.encode(JSON.stringify(obj)));
+  const data = segment({ alg: 'HS256', typ: 'JWT' }) + '.' + segment({ typ: 'app', iat: now, exp: now + 60 });
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(data));
+  return data + '.' + base64url(new Uint8Array(sig));
+}
+
+// Tag SDK errors with which credential set / step failed, so callers (and the demo log) can tell
+// an Upload-credential problem (ByteArk: formId/formSecret/projectKey) from a CMS-Two-credential
+// problem (cms.accessId/secret). `error.source` is 'byteark' | 'cms'.
+function sdkError(source, message, cause) {
+  const e = new Error(message);
+  e.source = source;
+  if (cause !== undefined) e.cause = cause;
+  return e;
+}
+
+// Return a valid { accessToken, teamId }, minting a fresh one via the exchange when the cache is
+// empty, near expiry, or force-refreshed (after a 401). Only tokens cross the network.
+// A failure here is a CMS-Two credential problem (cms.accessId / cms.secret) — NOT ByteArk.
+async function getAuth(cms, force = false) {
+  if (!force && cms._auth && cms._auth.expiresAtMs - 10000 > Date.now()) return cms._auth;
+  const appToken = await signAppToken(cms.secret);
+  cms.log?.('POST /api/v1/upload-tokens →');
+  const res = await fetch(cms.baseUrl + '/api/v1/upload-tokens', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ accessId: cms.accessId, appToken }),
+  });
+  const json = await res.json().catch(() => ({}));
+  cms.log?.('  ' + res.status + ':'); cms.log?.({ ...json, accessToken: json.accessToken ? '(token)' : undefined });
+  if (!res.ok) {
+    const detail = json.message || ('HTTP ' + res.status);
+    // 401 = the key itself was rejected (bad/revoked accessId, or appToken signed with the wrong secret).
+    const hint = res.status === 401
+      ? ' — check your CMS-Two upload key (cms.accessId / cms.secret).'
+      : '';
+    throw sdkError('cms', 'CMS-Two rejected the upload key: ' + detail + hint);
+  }
+  cms._auth = { accessToken: json.accessToken, teamId: json.teamId, expiresAtMs: Date.parse(json.expiresAt) };
+  return cms._auth;
 }
 
 // ── ByteArk Stream ──────────────────────────────────────────────────────────────────
@@ -227,7 +307,7 @@ export function uploadToByteArkStream(config, file, { title }, onProgress) {
       projectKey: config.projectKey,
       onUploadProgress: (_job, p) => onProgress(p?.percent ?? 0),
       onUploadCompleted: (job) => resolve(job.uploadId),   // uploadId is the ByteArk video key
-      onUploadFailed: (_job, err) => reject(err),
+      onUploadFailed: (_job, err) => reject(bytearkError(err)),
     });
 
     // await addUploadJobs (it creates the video object) before start().
@@ -235,29 +315,63 @@ export function uploadToByteArkStream(config, file, { title }, onProgress) {
     manager
       .addUploadJobs([{ file, videoMetadata: { title, tags: [{ name: file.name }] } }])
       .then(() => manager.start())
-      .catch(reject);
+      .catch((err) => reject(bytearkError(err)));
   });
 }
 
+// A failure in the ByteArk step is an Upload-credentials problem (formId / formSecret / projectKey)
+// or an upload/network issue — never the CMS-Two key.
+function bytearkError(err) {
+  const detail = err?.message || (typeof err === 'string' ? err : JSON.stringify(err));
+  return sdkError(
+    'byteark',
+    'Video upload to ByteArk failed — check your Upload credentials (byteark.formId / formSecret / projectKey): ' + detail,
+    err,
+  );
+}
+
 // ── Thai PBS Video CMS ─────────────────────────────────────────────────────────────────────────
-// Every call takes `cms` = { baseUrl, headers, log } (see makeCmsContext).
-async function postCmsTwo(cms, path, body) {
-  cms.log?.('POST /api/v1' + path + ' →'); cms.log?.(body);
-  const res = await fetch(cms.baseUrl + '/api/v1' + path, {
-    method: 'POST',
-    headers: { ...cms.headers, 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+// Every call takes `cms` (see makeCmsContext).
+
+// Authenticated POST: attaches the accessToken (x-upload-token header) and fills the body with the key's teamId.
+// `makeBody(teamId)` builds the request body. On a 401 we re-mint the token once and retry.
+async function authedPost(cms, path, makeBody) {
+  const send = async (auth) => {
+    cms.log?.('POST /api/v1' + path + ' →');
+    const body = makeBody(auth.teamId);
+    cms.log?.(body);
+    return fetch(cms.baseUrl + '/api/v1' + path, {
+      method: 'POST',
+      // Custom header (not Authorization) so the API gateway doesn't intercept it as a
+      // Zitadel bearer before it reaches the CMS.
+      headers: { 'content-type': 'application/json', 'x-upload-token': auth.accessToken },
+      body: JSON.stringify(body),
+    });
+  };
+
+  let auth = await getAuth(cms);
+  let res = await send(auth);
+  if (res.status === 401) {                    // token expired/revoked mid-flight — re-mint once
+    auth = await getAuth(cms, true);
+    res = await send(auth);
+  }
   const json = await res.json().catch(() => ({}));
   cms.log?.('  ' + res.status + ':'); cms.log?.(json);
-  if (!res.ok) throw new Error('Thai PBS Video CMS ' + path + ' failed: ' + (json.errorMessage || res.status));
+  if (!res.ok) {
+    const detail = json.message || json.errorMessage || ('HTTP ' + res.status);
+    // 401/403 here point back at the upload key (expired/revoked, or lacks scope for this team).
+    const hint = (res.status === 401 || res.status === 403)
+      ? ' — check your CMS-Two upload key (cms.accessId / cms.secret).'
+      : '';
+    throw sdkError('cms', 'CMS-Two ' + path + ' failed: ' + detail + hint);
+  }
   return json;
 }
 
 // Register the file in the media library. Creates a media-video keyed by the ByteArk
 // videoKey; ByteArk's webhook later finds it by that key and updates mediaVideoStatus.
-export async function createMediaVideo(cms, { videoKey, file, teamId }) {
-  const json = await postCmsTwo(cms, '/media/files', {
+export async function createMediaVideo(cms, { videoKey, file }) {
+  const json = await authedPost(cms, '/media/files', (teamId) => ({
     type: 'video',
     videos: [{
       teamId,
@@ -272,14 +386,14 @@ export async function createMediaVideo(cms, { videoKey, file, teamId }) {
       mp4MediaStatus: 'unknown',
       mp4MediaAvailabledAt: null,
     }],
-  });
+  }));
   return json.videos[0];
 }
 
 // Create the Video record from that media-video. The video item is the media's data
 // + metaInfo; passing media.id links the two (so the webhook's status also reaches the video).
-export async function createVideo(cms, { media, teamId, title, tagline, programId }) {
-  const json = await postCmsTwo(cms, '/videos', {
+export async function createVideo(cms, { media, title, tagline, programId }) {
+  const json = await authedPost(cms, '/videos', (teamId) => ({
     teamId,
     videos: [{
       id: media.id,
@@ -307,19 +421,22 @@ export async function createVideo(cms, { media, teamId, title, tagline, programI
         ...(programId ? { programId } : {}),
       },
     }],
-  });
+  }));
   return json.videos[0];
 }
 
 // Look up a video by its id (poll until video.mediaVideo.mediaVideoStatus is 'completed').
+// Public endpoint — no token needed, so polling works for the whole transcoding duration.
 export async function getVideoById(cms, videoId) {
-  const res = await fetch(cms.baseUrl + '/api/v1/videos/' + videoId, { headers: cms.headers });
+  const res = await fetch(cms.baseUrl + '/api/v1/videos/' + videoId);
   return res.json();
 }
 
-// List a team's programs (NOTE: the query param is `teamIds`, plural).
-export async function listPrograms(cms, teamId) {
-  const res = await fetch(cms.baseUrl + '/api/v1/programs?teamIds=' + encodeURIComponent(teamId) + '&limit=100', { headers: cms.headers });
+// List the key's team's programs (NOTE: the query param is `teamIds`, plural). The teamId comes
+// from the token exchange; the GET itself is public and sends no token.
+export async function listPrograms(cms) {
+  const { teamId } = await getAuth(cms);
+  const res = await fetch(cms.baseUrl + '/api/v1/programs?teamIds=' + encodeURIComponent(teamId) + '&limit=100');
   const { data = [] } = await res.json();
   return data;
 }

@@ -73,17 +73,14 @@
               <td>Contact the <strong>Thai PBS Video CMS</strong> team.</td>
             </tr>
             <tr>
-              <td><code>teamId</code></td>
-              <td>Your team's ID in Thai PBS Video CMS.</td>
-            </tr>
-            <tr>
               <td><code>cms.baseUrl</code></td>
               <td>Staging: <code>https://console-program-new.thaipbsbeta.com/</code><br />
                   Production: <code>https://console-vod.thaipbs.or.th/</code></td>
             </tr>
             <tr>
-              <td><code>cms.apiSecret</code></td>
-              <td>Contact the <strong>Thai PBS Video CMS</strong> team.</td>
+              <td><code>cms.accessId</code><br /><code>cms.secret</code></td>
+              <td>Your upload key — contact the <strong>Thai PBS Video CMS</strong> team. The team is
+                  derived from the key, so there's no separate <code>teamId</code>.</td>
             </tr>
           </tbody>
         </table>
@@ -105,9 +102,12 @@
         <h3 class="step"><span class="num">1</span> Initialize the SDK</h3>
         <p>Create one upload manager with your credentials and callbacks — reuse it for every upload.</p>
 <pre class="code" data-lang="javascript"><code>const uploadManager = new CmsTwoSdk({
-  teamId: 'teamId',
   byteark: { formId, formSecret, projectKey },
-  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' },
+  cms: {
+    baseUrl:  '&lt;cms base url&gt;',
+    accessId: '&lt;accessId&gt;',   // public — identifies your key
+    secret:   '&lt;secret&gt;',     // signs appTokens locally; never sent over the wire
+  },                          // no teamId — derived from your key
   onUploadProgress: (job, progress) =&gt; console.log(progress.percent + '%'),
   onUploadCompleted: (job) =&gt; console.log('created:', job.video.id),
 });</code></pre>
@@ -144,9 +144,8 @@ player.src = video.mediaVideo.embeddedUrl;</code></pre>
         <table class="params">
           <thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>teamId</code></td><td>string</td><td>Thai PBS Video CMS team ObjectId that owns the video.</td></tr>
             <tr><td><code>byteark</code></td><td>object</td><td><code>{ formId, formSecret, projectKey }</code> — upload form credentials.</td></tr>
-            <tr><td><code>cms</code></td><td>object</td><td><code>{ baseUrl, apiSecret?, log? }</code>. <code>apiSecret</code> is optional on local (auto-auth), required elsewhere. <code>log</code> is an optional <code>(msg) =&gt; void</code>.</td></tr>
+            <tr><td><code>cms</code></td><td>object</td><td><code>{ baseUrl, accessId, secret, log? }</code>. <code>accessId</code> + <code>secret</code> are your key (from the Thai PBS team); the SDK signs an appToken with <code>secret</code> locally and exchanges it — the raw secret never crosses the network. No <code>teamId</code> — it's derived from the key. <code>log</code> is an optional <code>(msg) =&gt; void</code>.</td></tr>
             <tr><td><code>onUploadProgress</code></td><td>function</td><td><code>(job, progress)</code> — a job's upload progressed. <code>progress = { percent }</code>.</td></tr>
             <tr><td><code>onUploadCompleted</code></td><td>function</td><td><code>(job)</code> — a job's Thai PBS Video CMS records now exist (<code>job.media</code>, <code>job.video</code>).</td></tr>
             <tr><td><code>onUploadFailed</code></td><td>function</td><td><code>(job, error)</code> — a job failed; the queue continues with the next one.</td></tr>
@@ -155,9 +154,12 @@ player.src = video.mediaVideo.embeddedUrl;</code></pre>
           </tbody>
         </table>
 <pre class="code" data-lang="javascript"><code>const uploadManager = new CmsTwoSdk({
-  teamId: 'teamId',
   byteark: { formId, formSecret, projectKey },
-  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' },
+  cms: {
+    baseUrl:  '&lt;cms base url&gt;',
+    accessId: '&lt;accessId&gt;',   // public
+    secret:   '&lt;secret&gt;',     // signs appTokens locally; never sent
+  },                          // no teamId — derived from your key
   onUploadProgress: (job, progress) =&gt; console.log(job.name, progress.percent + '%'),
   onUploadCompleted: (job) =&gt; console.log('created:', job.video.id),
   onUploadFailed: (job, error) =&gt; console.error(job.name, error),
@@ -335,24 +337,30 @@ const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
           <thead><tr><th>Function</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>uploadVideo(options)</code></td><td>One-shot: upload + create media + create video. Returns <code>{ media, video }</code>. Same options as the constructor plus <code>file</code>, <code>title</code>, <code>description</code>, <code>programId</code>, <code>onProgress</code>, <code>onStatus</code>.</td></tr>
-            <tr><td><code>makeCmsContext({ baseUrl, apiSecret?, log? })</code></td><td>Build the <code>cms</code> context (base URL + auth header) the calls below need.</td></tr>
+            <tr><td><code>makeCmsContext({ baseUrl, accessId, secret, log? })</code></td><td>Build the <code>cms</code> context (base URL + credentials + a token cache) the calls below need. The context signs/exchanges tokens on demand and caches the accessToken + teamId.</td></tr>
             <tr><td><code>uploadToByteArkStream(config, file, { title }, onProgress)</code></td><td>Upload the file only; resolves with the raw ByteArk key. You only need this if you're wiring the steps yourself — <code>createMediaVideo</code> consumes it internally.</td></tr>
-            <tr><td><code>createMediaVideo(cms, { videoKey, file, teamId })</code></td><td>Register the media-video (<code>POST /media/files</code>). Returns the media.</td></tr>
-            <tr><td><code>createVideo(cms, { media, teamId, title, tagline, programId })</code></td><td>Create the video record (<code>POST /videos</code>), linked to the media. Returns the video.</td></tr>
-            <tr><td><code>getVideoById(cms, videoId)</code></td><td>Fetch a video (<code>GET /videos/:videoId</code>); status + <code>embeddedUrl</code> are under <code>video.mediaVideo</code>.</td></tr>
-            <tr><td><code>listPrograms(cms, teamId)</code></td><td>List a team's programs.</td></tr>
+            <tr><td><code>createMediaVideo(cms, { videoKey, file })</code></td><td>Register the media-video (<code>POST /media/files</code>, sends the token in the <code>x-upload-token</code> header). teamId is filled from the key. Returns the media.</td></tr>
+            <tr><td><code>createVideo(cms, { media, title, tagline, programId })</code></td><td>Create the video record (<code>POST /videos</code>, <code>x-upload-token</code> header), linked to the media. Returns the video.</td></tr>
+            <tr><td><code>getVideoById(cms, videoId)</code></td><td>Fetch a video (<code>GET /videos/:videoId</code>, public — no token); status + <code>embeddedUrl</code> are under <code>video.mediaVideo</code>.</td></tr>
+            <tr><td><code>listPrograms(cms)</code></td><td>List the key's team's programs (team derived from the key).</td></tr>
           </tbody>
         </table>
 <pre class="code" data-lang="javascript"><code>import { uploadVideo, makeCmsContext, getVideoById } from './sdk.js';
 
+const cmsCreds = {
+  baseUrl:  '&lt;cms base url&gt;',
+  accessId: '&lt;accessId&gt;',
+  secret:   '&lt;secret&gt;',   // signs appTokens locally; never sent
+};
+
 const { video } = await uploadVideo({
-  file, title: 'My video', teamId: 'teamId',
+  file, title: 'My video',   // no teamId — derived from the key
   byteark: { formId, formSecret, projectKey },
-  cms: { baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' },
+  cms: cmsCreds,
   onProgress: (pct) =&gt; console.log(pct + '%'),
 });
 
-const cms = makeCmsContext({ baseUrl: '&lt;cms base url&gt;', apiSecret: 'apiSecret' });
+const cms = makeCmsContext(cmsCreds);
 const fresh = await getVideoById(cms, video.id);</code></pre>
       </section>
 
@@ -379,21 +387,21 @@ const fresh = await getVideoById(cms, video.id);</code></pre>
         <div class="row">
           <div><label data-i18n="label.baseUrl">Base URL</label>
             <select id="cmsBase">
-              <option value="" data-i18n="opt.staging" selected>Staging — via local proxy (run proxy.mjs)</option>
-              <option value="http://localhost:3000" data-i18n="opt.local">Local dev — http://localhost:3000</option>
+              <option value="http://localhost:3000" selected>Local dev — http://localhost:3000</option>
+              <option value="https://console-program-new.thaipbsbeta.com">Staging — console-program-new.thaipbsbeta.com</option>
             </select>
           </div>
-          <div><label data-i18n="label.teamId">Team ID</label><input id="teamId" placeholder="team ObjectId" /></div>
+          <div><label>Access ID</label><input id="accessId" placeholder="akid_…" /></div>
         </div>
-        <label><span data-i18n="label.apiSecret">API secret</span> <span style="font-weight:400;color:var(--muted)" data-i18n="note.apiSecret"></span></label>
+        <label>Secret <span style="font-weight:400;color:var(--muted)">signs appTokens locally — never sent</span></label>
         <div class="secret-field">
-          <input id="apiSecret" type="password" placeholder="" data-i18n-ph="ph.apiSecret" />
+          <input id="secret" type="password" placeholder="usk_…" />
           <button type="button" id="toggleSecret" class="eye" aria-label="Show secret" title="Show / hide">
             <svg class="i-show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             <svg class="i-hide" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
           </button>
         </div>
-        <p class="hint" data-i18n="hint.apiSecret">Sent as the x-api-server-secret header. </p>
+        <p class="hint">Your key's <code>accessId</code> + <code>secret</code> (from the Thai PBS team). The SDK signs a short-lived appToken with the secret <em>locally</em> and exchanges it for a 5-minute token — the raw secret never crosses the network.</p>
       </section>
 
       <section class="card">

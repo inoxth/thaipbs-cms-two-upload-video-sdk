@@ -13,13 +13,17 @@ const setStatus = (text, kind = 'info') => {   // kind: 'info' | 'ok' | 'err'
 
 // Build the SDK from the current form values (fresh each time, so edits apply immediately).
 const uploader = (callbacks = {}) => new CmsTwoSdk({
-  teamId: $('teamId').value.trim(),
   byteark: {
     formId: $('formId').value.trim(),
     formSecret: $('formSecret').value.trim(),
     projectKey: $('projectKey').value.trim(),
   },
-  cms: { baseUrl: $('cmsBase').value, apiSecret: $('apiSecret').value.trim(), log },
+  cms: {
+    baseUrl: $('cmsBase').value,
+    accessId: $('accessId').value.trim(),
+    secret: $('secret').value.trim(),
+    log,
+  },
   ...callbacks,
 });
 
@@ -125,8 +129,7 @@ $('refresh').addEventListener('click', async () => {
 
 // ── program dropdown ────────────────────────────────────────────────────────────────
 $('loadPrograms').addEventListener('click', async () => {
-  const teamId = $('teamId').value.trim();
-  if (!teamId) return alert(t('alert.enterTeam'));
+  if (!$('accessId').value.trim() || !$('secret').value.trim()) return alert(t('alert.enterCreds'));
   const btn = $('loadPrograms'); btn.disabled = true; btn.textContent = t('btn.loading');
   try {
     const data = await uploader().listPrograms();
@@ -139,14 +142,14 @@ $('loadPrograms').addEventListener('click', async () => {
 
 // ── show/hide the masked API secret (CSS class swaps which eye icon shows) ───────────
 $('toggleSecret').addEventListener('click', () => {
-  const reveal = $('apiSecret').type === 'password';
-  $('apiSecret').type = reveal ? 'text' : 'password';
+  const reveal = $('secret').type === 'password';
+  $('secret').type = reveal ? 'text' : 'password';
   $('toggleSecret').classList.toggle('reveal', reveal);
 });
 
 // ── input history: remember past entries and offer them as a native <datalist> dropdown ──
 // Saved to localStorage after a successful upload, so repeat uploads are quicker.
-const REMEMBER = ['formId', 'formSecret', 'projectKey', 'teamId', 'title'];
+const REMEMBER = ['formId', 'formSecret', 'projectKey', 'accessId', 'title'];
 function loadHistory() {
   for (const id of REMEMBER) {
     const el = $(id); if (!el) continue;
@@ -189,8 +192,6 @@ function renderLiveCode() {
   const str = (s) => "'" + String(s).replace(/'/g, "\\'") + "'";
   const orPh = (id, ph) => str(v(id) || ph);          // value, else a <placeholder>
   const secret = (id, ph) => (v(id) ? "'•••••'" : str(ph)); // never print the real secret
-  // The demo routes staging through the local proxy (base ''), but the live code should show the
-  // real domain a dev would actually put here.
   const base = $('cmsBase').value || 'https://console-program-new.thaipbsbeta.com';
   const file = $('file').files[0];
   const programId = $('program').value;
@@ -199,7 +200,6 @@ function renderLiveCode() {
 `import { CmsTwoSdk } from './sdk.js';
 
 const uploadManager = new CmsTwoSdk({
-  teamId: ${orPh('teamId', 'teamId')},
   byteark: {
     formId: ${orPh('formId', '<form id>')},
     formSecret: ${orPh('formSecret', '<form secret>')},
@@ -207,8 +207,9 @@ const uploadManager = new CmsTwoSdk({
   },
   cms: {
     baseUrl: ${str(base)},
-    apiSecret: ${secret('apiSecret', 'apiSecret')},
-  },
+    accessId: ${orPh('accessId', '<accessId>')},
+    secret: ${secret('secret', '<secret>')},   // signs appTokens locally; never sent
+  },                                            // no teamId — derived from the key
   onUploadProgress: (job, progress) => console.log(progress.percent + '%'),
   onUploadCompleted: (job) => console.log('created:', job.video.id),
 });

@@ -7,9 +7,12 @@ class** — copy `sdk.js` into your project, construct it once, queue files, the
 import { CmsTwoSdk } from './sdk.js';
 
 const uploadManager = new CmsTwoSdk({
-  teamId: 'teamId',
   byteark: { formId, formSecret, projectKey },
-  cms: { baseUrl: '<cms base url>', apiSecret: 'apiSecret' },
+  cms: {
+    baseUrl:  '<cms base url>',
+    accessId: '<accessId>',   // public — identifies your key
+    secret:   '<secret>',     // signs appTokens locally; never sent over the wire
+  },                          // no teamId — derived from your key
 
   // Callback functions (all optional)
   onUploadProgress: (job, progress) => console.log(job.name, progress.percent + '%'),
@@ -52,30 +55,38 @@ service. Poll `uploadManager.getVideoById(job.video.id)` (or `myVideo.whenReady(
 - `app.js` — demo UI wiring: reads the form, calls `sdk.js`, updates preview/status/log/history.
 - `styles.css` — styling (Thai PBS Video CMS design tokens).
 - `i18n.js` — EN/TH text for the page.
-- `proxy.mjs` — a tiny Node server that serves the files **and** proxies `/api/*` to a Thai PBS Video CMS
-  environment. The proxy exists so the browser can call **staging** without CORS errors: the page
-  calls the proxy same-origin, and the proxy forwards server-to-server (where CORS doesn't apply),
-  passing the `x-api-server-secret` auth header.
+- `proxy.mjs` — a tiny Node server that serves these static files, and can *optionally* proxy `/api/*`
+  to a CMS environment. **Auth is no longer proxied** — the SDK signs its own short-lived tokens and
+  exchanges them, so nothing sensitive passes through it. The proxy is now only useful to let a
+  localhost page call a remote CMS without adding your origin to its CORS allow-list (see below).
+
+## Auth model
+
+The SDK is given an **`accessId` + `secret`** (an *upload key* the Thai PBS team issues). It signs a
+short-lived `appToken` with the `secret` **locally in the browser**, exchanges it at
+`POST /api/v1/upload-tokens` for a 5-minute `accessToken`, and sends that in the
+**`x-upload-token`** header on the two write calls (a custom header, not `Authorization`, so the
+API gateway doesn't intercept it). **Only tokens ever cross the network** — never the raw `secret`.
+No `teamId` is configured; it comes back from the exchange.
 
 ## Run
 
 ```bash
-node proxy.mjs
+node proxy.mjs        # serves the static files (and optional /api proxy)
 ```
 
-Then open http://localhost:8899/
+Then open http://localhost:8899/ (or serve the files any other way).
 
-Config via env (optional):
+## CORS
 
-```bash
-PORT=8899 STAGING_BASE=https://console-program-new.thaipbsbeta.com node proxy.mjs
-```
+Because the SDK calls the CMS **directly** from the browser, your page's origin must be in that CMS's
+`APP_CORS_ALLOWED_ORIGINS`. For local dev against a remote (staging) CMS you can instead run
+`proxy.mjs` and point `baseUrl` at the proxy, which forwards server-to-server (no CORS).
 
 ## Using the page
 1. Fill the **Upload credentials** (Form ID/Secret, Project Key).
-2. **Thai PBS Video CMS** → pick the target:
-   - *Staging (via local proxy)* — default; set the **API secret** to the env `API_SERVER_SECRET`.
-   - *Local dev* (`http://localhost:3000`) — auto-authenticates, leave the secret blank.
+2. **Thai PBS Video CMS** → set the **Base URL** (Local dev `http://localhost:3000`, or Staging) and paste
+   your **Access ID** + **Secret** (your upload key).
 3. Fill Program / Title / Description, choose the video file, click **Upload**.
 
 Requires Node 24+ (uses global `fetch`).

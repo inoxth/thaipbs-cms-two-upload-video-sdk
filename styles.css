@@ -167,3 +167,24 @@ pre#log { background: #0f172a; color: #cbd5e1; border-radius: var(--radius-lg); 
   overflow: auto; max-height: 300px; white-space: pre-wrap; word-break: break-word;
   font: 13.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace; margin: 0; }
 pre#log code { background: none; }
+
+/* list-videos demo results */
+.video-list { margin-top: 1rem; }
+.video-list-head { display: flex; align-items: center; gap: .5rem; font-size: .8rem;
+  color: var(--muted); margin-bottom: .5rem; }
+.video-list-head span { margin-right: auto; }
+.video-list-head button:disabled { opacity: .4; cursor: default; }
+.video-row { display: flex; align-items: center; gap: .75rem; padding: .5rem .6rem;
+  border-bottom: 1px solid var(--border); }
+.video-row .video-title { flex: 1; font-size: .9rem; }
+.video-row .video-meta { font-size: .72rem; color: var(--muted); }
+/* skeleton placeholders — same row height as real rows, so paging doesn't shift the layout */
+/* border-box min-height == real row: .5rem×2 padding + 1px border + 1.44rem title line */
+.video-row.skeleton { pointer-events: none; min-height: 2.5rem; }
+.sk { display: inline-block; height: .8rem; border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 25%, #f1f5f9 37%, var(--border) 63%);
+  background-size: 400% 100%; animation: sk-shimmer 1.4s ease infinite; }
+.sk-label { width: 140px; }
+.sk-title { width: 45%; }
+.sk-meta { width: 48px; }
+@keyframes sk-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }

@@ -67,6 +67,16 @@ const DICT = {
     'alert.enterCreds': 'Enter your Access ID and Secret first',
     'alert.loadFailed': (m) => 'Load failed: ' + m,
     'log.loadedPrograms': (n) => `Loaded ${n} programs`,
+    'list.title': 'List videos',
+    'list.desc': "Fetch the videos in your key's team(s) — uses the same credentials as above.",
+    'list.search': 'Search',
+    'list.limit': 'Per page',
+    'btn.listVideos': 'List videos',
+    'btn.prev': '‹ Prev',
+    'btn.next': 'Next ›',
+    'list.loading': 'Loading videos…',
+    'list.count': (total, page, last) => `${total} videos — page ${page} of ${last}`,
+    'log.loadedVideos': (n) => `Loaded ${n} videos`,
   },
   th: {
     'app.title': 'Thai PBS Video CMS — Video Upload SDK',
@@ -131,14 +141,24 @@ const DICT = {
     'alert.enterCreds': 'กรอก Access ID และ Secret ก่อน',
     'alert.loadFailed': (m) => 'โหลดไม่สำเร็จ: ' + m,
     'log.loadedPrograms': (n) => `โหลด ${n} รายการแล้ว`,
+    'list.title': 'รายการวิดีโอ',
+    'list.desc': 'ดึงวิดีโอในทีมของ key คุณ — ใช้ข้อมูลรับรองชุดเดียวกับด้านบน',
+    'list.search': 'ค้นหา',
+    'list.limit': 'ต่อหน้า',
+    'btn.listVideos': 'แสดงรายการวิดีโอ',
+    'btn.prev': '‹ ก่อนหน้า',
+    'btn.next': 'ถัดไป ›',
+    'list.loading': 'กำลังโหลดวิดีโอ…',
+    'list.count': (total, page, last) => `${total} วิดีโอ — หน้า ${page} จาก ${last}`,
+    'log.loadedVideos': (n) => `โหลด ${n} วิดีโอแล้ว`,
   },
 };
 
 let lang = localStorage.getItem('lang') || 'en';   // default English
 
-export function t(key, arg) {
+export function t(key, ...args) {
   const v = DICT[lang]?.[key] ?? DICT.en[key] ?? key;
-  return typeof v === 'function' ? v(arg) : v;
+  return typeof v === 'function' ? v(...args) : v;
 }
 
 function apply() {

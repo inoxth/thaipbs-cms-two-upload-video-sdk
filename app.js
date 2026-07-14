@@ -140,6 +140,56 @@ $('loadPrograms').addEventListener('click', async () => {
   finally { btn.disabled = false; btn.textContent = t('btn.loadPrograms'); }
 });
 
+// ── list videos ──────────────────────────────────────────────────────────────────
+// Same credentials as the upload demo — listVideos() sends the x-upload-token so the API
+// scopes the result to your key's team(s). Prev/next re-fetch the neighbouring page.
+async function fetchVideos(page) {
+  if (!$('accessId').value.trim() || !$('secret').value.trim()) return alert(t('alert.enterCreds'));
+  const btn = $('listVideosBtn'); btn.disabled = true; btn.textContent = t('btn.loading');
+  const out = $('listResult');
+  // Skeleton: one placeholder row per expected item, so the list keeps its height and the UI
+  // doesn't jump when paging. A header skeleton keeps the Prev/Next bar from shifting too.
+  const rows = Number($('listLimit').value) || 20;
+  out.innerHTML =
+    '<div class="video-list-head"><span class="sk sk-label"></span></div>' +
+    '<div class="video-row skeleton"><span class="sk sk-title"></span><span class="sk sk-meta"></span></div>'.repeat(rows);
+  try {
+    const res = await uploader().listVideos({
+      q: $('listQuery').value.trim() || undefined,
+      limit: Number($('listLimit').value) || 20,
+      page,
+      sortBy: 'mode:createdAt,order:desc',
+    });
+    out.innerHTML = '';
+
+    const head = document.createElement('div');
+    head.className = 'video-list-head';
+    const label = document.createElement('span');
+    label.textContent = t('list.count', res.total, res.currentPage, res.lastPage);
+    const prev = document.createElement('button');
+    prev.type = 'button'; prev.className = 'btn-ghost'; prev.textContent = t('btn.prev');
+    prev.disabled = res.currentPage <= 1;
+    prev.addEventListener('click', () => fetchVideos(res.currentPage - 1));
+    const next = document.createElement('button');
+    next.type = 'button'; next.className = 'btn-ghost'; next.textContent = t('btn.next');
+    next.disabled = res.currentPage >= res.lastPage;
+    next.addEventListener('click', () => fetchVideos(res.currentPage + 1));
+    head.append(label, prev, next);
+    out.appendChild(head);
+
+    for (const v of res.data) {
+      const row = document.createElement('div'); row.className = 'video-row';
+      const status = v?.mediaVideo?.mediaVideoStatus ?? '—';
+      row.innerHTML = `<span class="video-title"></span><span class="video-meta">${status}</span>`;
+      row.querySelector('.video-title').textContent = v.title || v.id;
+      out.appendChild(row);
+    }
+    log(t('log.loadedVideos', res.data.length));
+  } catch (e) { out.innerHTML = ''; alert(t('alert.loadFailed', e.message)); }
+  finally { btn.disabled = false; btn.textContent = t('btn.listVideos'); }
+}
+$('listVideosBtn').addEventListener('click', () => fetchVideos(1));
+
 // ── show/hide the masked API secret (CSS class swaps which eye icon shows) ───────────
 $('toggleSecret').addEventListener('click', () => {
   const reveal = $('secret').type === 'password';

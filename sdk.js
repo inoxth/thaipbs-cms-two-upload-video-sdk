@@ -189,6 +189,13 @@ export class CmsTwoSdk {
   listPrograms() {
     return listPrograms(this.cms);
   }
+
+  // List videos, scoped to your key's team(s). `options` maps 1:1 to the API query string —
+  // { page, limit, q, sortBy, publishStatus, programId, mediaStatus, type, ... } (all optional).
+  // Returns the paginated envelope: { total, from, to, currentPage, lastPage, perPage, data }.
+  listVideos(options = {}) {
+    return listVideos(this.cms, options);
+  }
 }
 
 // ── the underlying one-shot function (CmsTwoSdk.upload wraps this) ───────────────────
@@ -250,7 +257,10 @@ async function signAppToken(secret) {
   const enc = new TextEncoder();
   const now = Math.floor(Date.now() / 1000);
   const segment = (obj) => base64url(enc.encode(JSON.stringify(obj)));
-  const data = segment({ alg: 'HS256', typ: 'JWT' }) + '.' + segment({ typ: 'app', iat: now, exp: now + 60 });
+  // Backdate iat and use a 5-min window so a skewed client clock (vs the server's) doesn't
+  // reject the token on arrival. ponytail: fixed ±clock tolerance; the accessToken it mints is
+  // itself only 5 min, so a wider appToken changes nothing security-wise.
+  const data = segment({ alg: 'HS256', typ: 'JWT' }) + '.' + segment({ typ: 'app', iat: now - 60, exp: now + 300 });
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(data));
   return data + '.' + base64url(new Uint8Array(sig));
@@ -368,6 +378,29 @@ async function authedPost(cms, path, makeBody) {
   return json;
 }
 
+// Authenticated GET: attaches the accessToken (x-upload-token) so the API scopes the result to the
+// key's readable team(s). Re-mints the token once on a 401, mirroring authedPost.
+async function authedGet(cms, path) {
+  const send = (auth) => {
+    cms.log?.('GET /api/v1' + path + ' →');
+    return fetch(cms.baseUrl + '/api/v1' + path, { headers: { 'x-upload-token': auth.accessToken } });
+  };
+
+  let auth = await getAuth(cms);
+  let res = await send(auth);
+  if (res.status === 401) { auth = await getAuth(cms, true); res = await send(auth); }
+  const json = await res.json().catch(() => ({}));
+  cms.log?.('  ' + res.status + ':'); cms.log?.(json);
+  if (!res.ok) {
+    const detail = json.message || json.errorMessage || ('HTTP ' + res.status);
+    const hint = (res.status === 401 || res.status === 403)
+      ? ' — check your CMS-Two upload key (cms.accessId / cms.secret).'
+      : '';
+    throw sdkError('cms', 'CMS-Two ' + path + ' failed: ' + detail + hint);
+  }
+  return json;
+}
+
 // Register the file in the media library. Creates a media-video keyed by the ByteArk
 // videoKey; ByteArk's webhook later finds it by that key and updates mediaVideoStatus.
 export async function createMediaVideo(cms, { videoKey, file }) {
@@ -432,11 +465,25 @@ export async function getVideoById(cms, videoId) {
   return res.json();
 }
 
-// List the key's team's programs (NOTE: the query param is `teamIds`, plural). The teamId comes
-// from the token exchange; the GET itself is public and sends no token.
+// List the key's team's programs. Sends the x-upload-token (authenticated GET) plus the team's id
+// as `teamIds` (plural — the program query's param name), derived from the token exchange. Returns
+// the programs array.
 export async function listPrograms(cms) {
   const { teamId } = await getAuth(cms);
-  const res = await fetch(cms.baseUrl + '/api/v1/programs?teamIds=' + encodeURIComponent(teamId) + '&limit=100');
-  const { data = [] } = await res.json();
+  const { data = [] } = await authedGet(cms, '/programs?teamIds=' + encodeURIComponent(teamId) + '&limit=100');
   return data;
+}
+
+// List videos scoped to the key's readable team(s) (GET /videos; sends the x-upload-token so the
+// API resolves that scope — unlike the public getVideoById). `options` maps 1:1 to the API query
+// string: page, limit, q, sortBy, publishStatus, programId, mediaStatus, type, etc. Empty values are
+// dropped. Returns the paginated envelope { total, from, to, currentPage, lastPage, perPage, data }.
+export async function listVideos(cms, options = {}) {
+  const { teamId } = await getAuth(cms);
+  const qs = new URLSearchParams();
+  qs.set('teamId', teamId);            // scope to the key's team (from the token exchange)
+  for (const [k, v] of Object.entries(options)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, v);   // caller can override teamId
+  }
+  return authedGet(cms, '/videos?' + qs.toString());
 }

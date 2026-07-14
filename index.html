@@ -26,6 +26,7 @@
         <a href="#getJobQueue">getJobQueue()</a>
         <a href="#upload">upload()</a>
         <a href="#getVideoById">getVideoById()</a>
+        <a href="#listVideos">listVideos()</a>
         <a href="#listPrograms">listPrograms()</a>
         <div class="nav-group">Types</div>
         <a href="#job">Job</a>
@@ -304,6 +305,43 @@ player.src = ready.mediaVideo.embeddedUrl;</code></pre>
 const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
       </section>
 
+      <!-- listVideos -->
+      <section id="listVideos" class="ref">
+        <h3><code>listVideos(options?)</code> <span class="badge">async → Paginated&lt;Video&gt;</span></h3>
+        <p>List videos (<code>GET /api/v1/videos</code>), scoped to your key's readable team(s) — the SDK
+           sends the <code>x-upload-token</code> so the API resolves that scope (unlike the public
+           <a href="#getVideoById"><code>getVideoById()</code></a>). Pass filters/paging as
+           <code>options</code>; all are optional and map 1:1 to the API query string.</p>
+        <table class="params">
+          <thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>page</code> / <code>limit</code></td><td>number</td><td>Pagination (1-based page).</td></tr>
+            <tr><td><code>q</code></td><td>string</td><td>Free-text search.</td></tr>
+            <tr><td><code>sortBy</code></td><td>string</td><td><code>'mode:&lt;field&gt;,order:&lt;asc|desc&gt;'</code> — e.g. <code>'mode:createdAt,order:desc'</code>.</td></tr>
+            <tr><td><code>publishStatus</code></td><td>string</td><td>Filter by publish state.</td></tr>
+            <tr><td><code>programId</code> / <code>seasonId</code> / <code>episodeId</code></td><td>string</td><td>Filter by relation.</td></tr>
+            <tr><td><code>mediaStatus</code></td><td>string</td><td>Filter by media/publish status.</td></tr>
+            <tr><td><code>type</code></td><td>string</td><td>Video source type.</td></tr>
+          </tbody>
+        </table>
+        <p>Returns the paginated envelope:</p>
+        <table class="params">
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>total</code></td><td>number</td><td>Total matching videos.</td></tr>
+            <tr><td><code>from</code> / <code>to</code></td><td>number</td><td>Index range of this page.</td></tr>
+            <tr><td><code>currentPage</code> / <code>lastPage</code></td><td>number</td><td>Current + last page number.</td></tr>
+            <tr><td><code>perPage</code></td><td>number</td><td>Page size.</td></tr>
+            <tr><td><code>data</code></td><td>Video[]</td><td>The videos — same shape as <a href="#getVideoById"><code>getVideoById()</code></a>.</td></tr>
+          </tbody>
+        </table>
+<pre class="code" data-lang="javascript"><code>const { data, total, lastPage } = await uploadManager.listVideos({
+  page: 1, limit: 20,
+  sortBy: 'mode:createdAt,order:desc',
+});
+for (const video of data) console.log(video.id, video.title);</code></pre>
+      </section>
+
       <!-- listPrograms -->
       <section id="listPrograms" class="ref">
         <h3><code>listPrograms()</code> <span class="badge">async → Program[]</span></h3>
@@ -342,6 +380,7 @@ const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
             <tr><td><code>createMediaVideo(cms, { videoKey, file })</code></td><td>Register the media-video (<code>POST /media/files</code>, sends the token in the <code>x-upload-token</code> header). teamId is filled from the key. Returns the media.</td></tr>
             <tr><td><code>createVideo(cms, { media, title, tagline, programId })</code></td><td>Create the video record (<code>POST /videos</code>, <code>x-upload-token</code> header), linked to the media. Returns the video.</td></tr>
             <tr><td><code>getVideoById(cms, videoId)</code></td><td>Fetch a video (<code>GET /videos/:videoId</code>, public — no token); status + <code>embeddedUrl</code> are under <code>video.mediaVideo</code>.</td></tr>
+            <tr><td><code>listVideos(cms, options?)</code></td><td>List videos scoped to the key's team(s) (<code>GET /videos</code>, sends the <code>x-upload-token</code>). Returns the paginated envelope. <code>options</code> = query string (page, limit, q, sortBy, …).</td></tr>
             <tr><td><code>listPrograms(cms)</code></td><td>List the key's team's programs (team derived from the key).</td></tr>
           </tbody>
         </table>
@@ -438,6 +477,18 @@ const fresh = await getVideoById(cms, video.id);</code></pre>
 
       <div class="section-title" data-i18n="section.log">Log</div>
       <pre id="log" data-i18n="log.ready">Ready.</pre>
+
+      <!-- ── List videos demo — runs uploadManager.listVideos() with the credentials above ── -->
+      <section class="card" style="margin-top:24px">
+        <h3><span data-i18n="list.title">List videos</span></h3>
+        <p class="hint" data-i18n="list.desc">Fetch the videos in your key's team(s) — uses the same credentials as above.</p>
+        <div class="row" style="align-items:flex-end">
+          <div><label data-i18n="list.search">Search</label><input id="listQuery" placeholder="title…" /></div>
+          <div style="max-width:120px"><label data-i18n="list.limit">Per page</label><input id="listLimit" type="number" min="1" value="20" /></div>
+          <button type="button" id="listVideosBtn" class="btn-ghost" data-i18n="btn.listVideos">List videos</button>
+        </div>
+        <div id="listResult" class="video-list"></div>
+      </section>
     </main>
   </div>
 

@@ -307,16 +307,18 @@ const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
 
       <!-- listVideos -->
       <section id="listVideos" class="ref">
-        <h3><code>listVideos(options?)</code> <span class="badge">async → Paginated&lt;Video&gt;</span></h3>
-        <p>List videos (<code>GET /api/v1/videos</code>), scoped to your key's readable team(s) — the SDK
-           sends the <code>x-upload-token</code> so the API resolves that scope (unlike the public
-           <a href="#getVideoById"><code>getVideoById()</code></a>). Pass filters/paging as
-           <code>options</code>; all are optional and map 1:1 to the API query string.</p>
+        <h3><code>listVideos(options?)</code> <span class="badge">async → Search&lt;Video&gt;</span></h3>
+        <p>Search/list videos (<code>GET /api/v1/videos/search</code>, MongoDB Atlas Search), scoped to
+           your key's readable team(s) — the SDK sends the <code>x-upload-token</code> so the API
+           resolves that scope (unlike the public <a href="#getVideoById"><code>getVideoById()</code></a>).
+           Pass filters as <code>options</code>; all optional. Pagination is <strong>cursor-based</strong>:
+           carry <code>nextToken</code> / <code>prevToken</code> from the previous response.</p>
         <table class="params">
           <thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>page</code> / <code>limit</code></td><td>number</td><td>Pagination (1-based page).</td></tr>
-            <tr><td><code>q</code></td><td>string</td><td>Free-text search.</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>Page size (default 20).</td></tr>
+            <tr><td><code>nextToken</code> / <code>prevToken</code></td><td>string</td><td>Cursor from a previous result — pass one to move a page.</td></tr>
+            <tr><td><code>q</code></td><td>string</td><td>Full-text search query.</td></tr>
             <tr><td><code>sortBy</code></td><td>string</td><td><code>'mode:&lt;field&gt;,order:&lt;asc|desc&gt;'</code> — e.g. <code>'mode:createdAt,order:desc'</code>.</td></tr>
             <tr><td><code>publishStatus</code></td><td>string</td><td>Filter by publish state.</td></tr>
             <tr><td><code>programId</code> / <code>seasonId</code> / <code>episodeId</code></td><td>string</td><td>Filter by relation.</td></tr>
@@ -324,22 +326,23 @@ const { mediaVideoStatus, embeddedUrl } = video.mediaVideo;</code></pre>
             <tr><td><code>type</code></td><td>string</td><td>Video source type.</td></tr>
           </tbody>
         </table>
-        <p>Returns the paginated envelope:</p>
+        <p>Returns the cursor-paginated envelope:</p>
         <table class="params">
           <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>total</code></td><td>number</td><td>Total matching videos.</td></tr>
-            <tr><td><code>from</code> / <code>to</code></td><td>number</td><td>Index range of this page.</td></tr>
-            <tr><td><code>currentPage</code> / <code>lastPage</code></td><td>number</td><td>Current + last page number.</td></tr>
-            <tr><td><code>perPage</code></td><td>number</td><td>Page size.</td></tr>
             <tr><td><code>data</code></td><td>Video[]</td><td>The videos — same shape as <a href="#getVideoById"><code>getVideoById()</code></a>.</td></tr>
+            <tr><td><code>hasNextPage</code> / <code>hasPrevPage</code></td><td>boolean</td><td>Whether another page exists in each direction.</td></tr>
+            <tr><td><code>nextToken</code> / <code>prevToken</code></td><td>string</td><td>Cursors to pass back in to fetch the next / previous page.</td></tr>
           </tbody>
         </table>
-<pre class="code" data-lang="javascript"><code>const { data, total, lastPage } = await uploadManager.listVideos({
-  page: 1, limit: 20,
-  sortBy: 'mode:createdAt,order:desc',
-});
-for (const video of data) console.log(video.id, video.title);</code></pre>
+        <p class="hint">Note: Atlas Search doesn't return a total count or page numbers — walk pages with the tokens until <code>hasNextPage</code> is <code>false</code>.</p>
+<pre class="code" data-lang="javascript"><code>let res = await uploadManager.listVideos({ limit: 20, q: 'news' });
+for (const video of res.data) console.log(video.id, video.title);
+
+// next page
+if (res.hasNextPage) {
+  res = await uploadManager.listVideos({ limit: 20, q: 'news', nextToken: res.nextToken });
+}</code></pre>
       </section>
 
       <!-- listPrograms -->
@@ -380,7 +383,7 @@ for (const video of data) console.log(video.id, video.title);</code></pre>
             <tr><td><code>createMediaVideo(cms, { videoKey, file })</code></td><td>Register the media-video (<code>POST /media/files</code>, sends the token in the <code>x-upload-token</code> header). teamId is filled from the key. Returns the media.</td></tr>
             <tr><td><code>createVideo(cms, { media, title, tagline, programId })</code></td><td>Create the video record (<code>POST /videos</code>, <code>x-upload-token</code> header), linked to the media. Returns the video.</td></tr>
             <tr><td><code>getVideoById(cms, videoId)</code></td><td>Fetch a video (<code>GET /videos/:videoId</code>, public — no token); status + <code>embeddedUrl</code> are under <code>video.mediaVideo</code>.</td></tr>
-            <tr><td><code>listVideos(cms, options?)</code></td><td>List videos scoped to the key's team(s) (<code>GET /videos</code>, sends the <code>x-upload-token</code>). Returns the paginated envelope. <code>options</code> = query string (page, limit, q, sortBy, …).</td></tr>
+            <tr><td><code>listVideos(cms, options?)</code></td><td>Search/list videos scoped to the key's team(s) (<code>GET /videos/search</code>, Atlas Search, sends the <code>x-upload-token</code>). Cursor-paginated — returns <code>{ data, nextToken, prevToken, hasNextPage, hasPrevPage }</code>. <code>options</code> = query string (limit, nextToken, prevToken, q, sortBy, …).</td></tr>
             <tr><td><code>listPrograms(cms)</code></td><td>List the key's team's programs (team derived from the key).</td></tr>
           </tbody>
         </table>

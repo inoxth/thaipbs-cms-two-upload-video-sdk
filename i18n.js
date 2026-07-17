@@ -75,7 +75,7 @@ const DICT = {
     'btn.prev': '‹ Prev',
     'btn.next': 'Next ›',
     'list.loading': 'Loading videos…',
-    'list.count': (total, page, last) => `${total} videos — page ${page} of ${last}`,
+    'list.count': (n) => `${n} videos on this page`,
     'log.loadedVideos': (n) => `Loaded ${n} videos`,
   },
   th: {
@@ -149,7 +149,7 @@ const DICT = {
     'btn.prev': '‹ ก่อนหน้า',
     'btn.next': 'ถัดไป ›',
     'list.loading': 'กำลังโหลดวิดีโอ…',
-    'list.count': (total, page, last) => `${total} วิดีโอ — หน้า ${page} จาก ${last}`,
+    'list.count': (n) => `${n} วิดีโอในหน้านี้`,
     'log.loadedVideos': (n) => `โหลด ${n} วิดีโอแล้ว`,
   },
 };

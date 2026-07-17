@@ -190,9 +190,9 @@ export class CmsTwoSdk {
     return listPrograms(this.cms);
   }
 
-  // List videos, scoped to your key's team(s). `options` maps 1:1 to the API query string —
-  // { page, limit, q, sortBy, publishStatus, programId, mediaStatus, type, ... } (all optional).
-  // Returns the paginated envelope: { total, from, to, currentPage, lastPage, perPage, data }.
+  // Search/list videos, scoped to your key's team(s). Cursor-paginated — pass nextToken/prevToken
+  // from a previous result to page. `options`: { q, sortBy, limit, nextToken, prevToken, ...filters }.
+  // Returns { data, nextToken, prevToken, hasNextPage, hasPrevPage }.
   listVideos(options = {}) {
     return listVideos(this.cms, options);
   }
@@ -474,10 +474,11 @@ export async function listPrograms(cms) {
   return data;
 }
 
-// List videos scoped to the key's readable team(s) (GET /videos; sends the x-upload-token so the
-// API resolves that scope — unlike the public getVideoById). `options` maps 1:1 to the API query
-// string: page, limit, q, sortBy, publishStatus, programId, mediaStatus, type, etc. Empty values are
-// dropped. Returns the paginated envelope { total, from, to, currentPage, lastPage, perPage, data }.
+// Search/list videos via Atlas Search (GET /videos/search), scoped to the key's readable team(s)
+// (sends the x-upload-token + teamId from the token exchange). Cursor-paginated: pass `nextToken` or
+// `prevToken` from a previous response to move a page. `options` also takes q, sortBy, limit, and any
+// video filter (programId, publishStatus, mediaStatus, type, …); empty values are dropped.
+// Returns { data, nextToken, prevToken, hasNextPage, hasPrevPage }.
 export async function listVideos(cms, options = {}) {
   const { teamId } = await getAuth(cms);
   const qs = new URLSearchParams();
@@ -485,5 +486,5 @@ export async function listVideos(cms, options = {}) {
   for (const [k, v] of Object.entries(options)) {
     if (v !== undefined && v !== null && v !== '') qs.set(k, v);   // caller can override teamId
   }
-  return authedGet(cms, '/videos?' + qs.toString());
+  return authedGet(cms, '/videos/search?' + qs.toString());
 }

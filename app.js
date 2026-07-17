@@ -141,9 +141,9 @@ $('loadPrograms').addEventListener('click', async () => {
 });
 
 // ── list videos ──────────────────────────────────────────────────────────────────
-// Same credentials as the upload demo — listVideos() sends the x-upload-token so the API
-// scopes the result to your key's team(s). Prev/next re-fetch the neighbouring page.
-async function fetchVideos(page) {
+// Same credentials as the upload demo — listVideos() hits /videos/search (Atlas Search), which is
+// cursor-paginated: prev/next re-fetch using the tokens from the previous response.
+async function fetchVideos(cursor = {}) {
   if (!$('accessId').value.trim() || !$('secret').value.trim()) return alert(t('alert.enterCreds'));
   const btn = $('listVideosBtn'); btn.disabled = true; btn.textContent = t('btn.loading');
   const out = $('listResult');
@@ -157,23 +157,24 @@ async function fetchVideos(page) {
     const res = await uploader().listVideos({
       q: $('listQuery').value.trim() || undefined,
       limit: Number($('listLimit').value) || 20,
-      page,
       sortBy: 'mode:createdAt,order:desc',
+      nextToken: cursor.nextToken,
+      prevToken: cursor.prevToken,
     });
     out.innerHTML = '';
 
     const head = document.createElement('div');
     head.className = 'video-list-head';
     const label = document.createElement('span');
-    label.textContent = t('list.count', res.total, res.currentPage, res.lastPage);
+    label.textContent = t('list.count', res.data.length);
     const prev = document.createElement('button');
     prev.type = 'button'; prev.className = 'btn-ghost'; prev.textContent = t('btn.prev');
-    prev.disabled = res.currentPage <= 1;
-    prev.addEventListener('click', () => fetchVideos(res.currentPage - 1));
+    prev.disabled = !res.hasPrevPage;
+    prev.addEventListener('click', () => fetchVideos({ prevToken: res.prevToken }));
     const next = document.createElement('button');
     next.type = 'button'; next.className = 'btn-ghost'; next.textContent = t('btn.next');
-    next.disabled = res.currentPage >= res.lastPage;
-    next.addEventListener('click', () => fetchVideos(res.currentPage + 1));
+    next.disabled = !res.hasNextPage;
+    next.addEventListener('click', () => fetchVideos({ nextToken: res.nextToken }));
     head.append(label, prev, next);
     out.appendChild(head);
 
@@ -188,7 +189,7 @@ async function fetchVideos(page) {
   } catch (e) { out.innerHTML = ''; alert(t('alert.loadFailed', e.message)); }
   finally { btn.disabled = false; btn.textContent = t('btn.listVideos'); }
 }
-$('listVideosBtn').addEventListener('click', () => fetchVideos(1));
+$('listVideosBtn').addEventListener('click', () => fetchVideos());
 
 // ── show/hide the masked API secret (CSS class swaps which eye icon shows) ───────────
 $('toggleSecret').addEventListener('click', () => {

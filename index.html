@@ -26,6 +26,7 @@
         <a href="#getJobQueue">getJobQueue()</a>
         <a href="#upload">upload()</a>
         <a href="#getVideoById">getVideoById()</a>
+        <a href="#updateVideo">updateVideo()</a>
         <a href="#listVideos">listVideos()</a>
         <a href="#listPrograms">listPrograms()</a>
         <div class="nav-group">Types</div>
@@ -353,6 +354,31 @@ if (res.hasNextPage) {
 <pre class="code" data-lang="javascript"><code>const programs = await uploadManager.listPrograms();</code></pre>
       </section>
 
+      <!-- updateVideo -->
+      <section id="updateVideo" class="ref">
+        <h3><code>updateVideo(videoId, { title, programId })</code> <span class="badge">async → Video</span></h3>
+        <p>Update an existing video's <code>title</code> and/or <code>programId</code>. The CMS update is a
+           full <code>PUT</code>, so the SDK fetches the current record, applies your overrides, and sends the
+           whole thing back — <strong>everything you don't pass is preserved</strong> (tags, publish state, media, …).</p>
+        <table class="params">
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>videoId</code></td><td>string</td><td>The Thai PBS Video CMS video id (e.g. from <code>job.video.id</code>).</td></tr>
+            <tr><td><code>title</code></td><td>string?</td><td>New title. Omit to keep the current one.</td></tr>
+            <tr><td><code>programId</code></td><td>string? | null</td><td>Link the video to a program. Omit to keep; pass <code>''</code> or <code>null</code> to unlink.</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">Authenticated with the <code>x-upload-token</code> (same as create). Returns the updated video record.</p>
+<pre class="code" data-lang="javascript"><code>// rename, keep everything else
+await uploadManager.updateVideo(job.video.id, { title: 'New title' });
+
+// link to a program
+await uploadManager.updateVideo(job.video.id, { programId: '6a437c69c0781e4e08254f42' });
+
+// both at once
+await uploadManager.updateVideo(videoId, { title: 'New title', programId });</code></pre>
+      </section>
+
       <!-- Job type -->
       <section id="job" class="ref">
         <h3>The <code>Job</code> object</h3>
@@ -383,6 +409,7 @@ if (res.hasNextPage) {
             <tr><td><code>createMediaVideo(cms, { videoKey, file })</code></td><td>Register the media-video (<code>POST /media/files</code>, sends the token in the <code>x-upload-token</code> header). teamId is filled from the key. Returns the media.</td></tr>
             <tr><td><code>createVideo(cms, { media, title, tagline, programId })</code></td><td>Create the video record (<code>POST /videos</code>, <code>x-upload-token</code> header), linked to the media. Returns the video.</td></tr>
             <tr><td><code>getVideoById(cms, videoId)</code></td><td>Fetch a video (<code>GET /videos/:videoId</code>, public — no token); status + <code>embeddedUrl</code> are under <code>video.mediaVideo</code>.</td></tr>
+            <tr><td><code>updateVideo(cms, videoId, { title, programId })</code></td><td>Update a video (<code>PUT /videos/:videoId</code>, <code>x-upload-token</code>). Fetches + re-sends the full record with your overrides; unspecified fields preserved. Returns the updated video.</td></tr>
             <tr><td><code>listVideos(cms, options?)</code></td><td>Search/list videos scoped to the key's team(s) (<code>GET /videos/search</code>, Atlas Search, sends the <code>x-upload-token</code>). Cursor-paginated — returns <code>{ data, nextToken, prevToken, hasNextPage, hasPrevPage }</code>. <code>options</code> = query string (limit, nextToken, prevToken, q, sortBy, …).</td></tr>
             <tr><td><code>listPrograms(cms)</code></td><td>List the key's team's programs (team derived from the key).</td></tr>
           </tbody>
@@ -491,6 +518,27 @@ const fresh = await getVideoById(cms, video.id);</code></pre>
           <button type="button" id="listVideosBtn" class="btn-ghost" data-i18n="btn.listVideos">List videos</button>
         </div>
         <div id="listResult" class="video-list"></div>
+      </section>
+
+      <!-- ── Update video demo — runs uploadManager.updateVideo(id, { title, programId }) ── -->
+      <section class="card" style="margin-top:24px">
+        <h3>Update video</h3>
+        <p class="hint">Change a video's title and/or program — uses the same credentials above. Only the fields you fill are changed (the SDK fetches the video and PUTs it back).</p>
+        <label>Video ID</label><input id="updVideoId" placeholder="video id (e.g. 6a55c6ae…)" />
+        <label>New title <span style="font-weight:400;color:var(--muted)">(leave blank to keep current)</span></label>
+        <input id="updTitle" placeholder="new title" />
+        <label>Program</label>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:1 1 100%">
+            <select id="updProgram">
+              <option value="__keep__" selected>— keep current —</option>
+              <option value="">— none (unlink) —</option>
+            </select>
+          </div>
+          <button type="button" id="updLoadPrograms" class="btn-ghost" data-i18n="btn.loadPrograms">Load programs</button>
+        </div>
+        <button type="button" id="updateVideoBtn" class="btn-primary" style="margin-top:12px">Update video</button>
+        <div><span id="updStatus" class="status"></span></div>
       </section>
     </main>
   </div>

@@ -140,6 +140,50 @@ $('loadPrograms').addEventListener('click', async () => {
   finally { btn.disabled = false; btn.textContent = t('btn.loadPrograms'); }
 });
 
+// ── update video ─────────────────────────────────────────────────────────────────
+// Load programs into the update card's dropdown (keeps the two sentinel options on top).
+$('updLoadPrograms').addEventListener('click', async () => {
+  if (!$('accessId').value.trim() || !$('secret').value.trim()) return alert(t('alert.enterCreds'));
+  const btn = $('updLoadPrograms'); btn.disabled = true; btn.textContent = t('btn.loading');
+  try {
+    const data = await uploader().listPrograms();
+    const sel = $('updProgram');
+    sel.length = 2;   // keep "— keep current —" and "— none (unlink) —"
+    for (const p of data) sel.add(new Option(p.title + (p.slugCode ? ' (' + p.slugCode + ')' : ''), p.id));
+  } catch (e) { alert(t('alert.loadFailed', e.message)); }
+  finally { btn.disabled = false; btn.textContent = t('btn.loadPrograms'); }
+});
+
+// Update a video's title / programId. Only sends the fields the user actually set:
+// blank title → keep; program "— keep current —" → keep; "— none (unlink) —" → clear.
+$('updateVideoBtn').addEventListener('click', async () => {
+  const videoId = $('updVideoId').value.trim();
+  if (!videoId) return alert('Enter a video ID to update.');
+  if (!$('accessId').value.trim() || !$('secret').value.trim()) return alert(t('alert.enterCreds'));
+
+  const patch = {};
+  const newTitle = $('updTitle').value.trim();
+  if (newTitle) patch.title = newTitle;
+  const prog = $('updProgram').value;
+  if (prog !== '__keep__') patch.programId = prog;   // '' → unlink, id → set
+
+  if (Object.keys(patch).length === 0) return alert('Nothing to change — set a title and/or program.');
+
+  const btn = $('updateVideoBtn'); btn.disabled = true;
+  $('updStatus').className = 'status'; $('updStatus').textContent = 'Updating…';
+  try {
+    const updated = await uploader().updateVideo(videoId, patch);
+    $('updStatus').className = 'status ok';
+    $('updStatus').textContent = 'Updated ✓  title: ' + (updated.title ?? '—') + '  ·  programId: ' + (updated.programId ?? 'none');
+    log('updated video:');
+    log({ id: updated.id, title: updated.title, programId: updated.programId, slugCode: updated.slugCode });
+  } catch (e) {
+    $('updStatus').className = 'status err';
+    $('updStatus').textContent = String(e.message || e);
+    log(String(e));
+  } finally { btn.disabled = false; }
+});
+
 // ── list videos ──────────────────────────────────────────────────────────────────
 // Same credentials as the upload demo — listVideos() hits /videos/search (Atlas Search), which is
 // cursor-paginated: prev/next re-fetch using the tokens from the previous response.

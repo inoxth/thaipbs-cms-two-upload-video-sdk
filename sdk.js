@@ -196,6 +196,12 @@ export class CmsTwoSdk {
   listVideos(options = {}) {
     return listVideos(this.cms, options);
   }
+
+  // Update a video's editable fields (title, programId). Fetches the current record and PUTs it
+  // back with your overrides; unspecified fields are preserved. programId '' / null unlinks it.
+  updateVideo(videoId, { title, programId } = {}) {
+    return updateVideo(this.cms, videoId, { title, programId });
+  }
 }
 
 // ── the underlying one-shot function (CmsTwoSdk.upload wraps this) ───────────────────
@@ -343,15 +349,15 @@ function bytearkError(err) {
 // ── Thai PBS Video CMS ─────────────────────────────────────────────────────────────────────────
 // Every call takes `cms` (see makeCmsContext).
 
-// Authenticated POST: attaches the accessToken (x-upload-token header) and fills the body with the key's teamId.
-// `makeBody(teamId)` builds the request body. On a 401 we re-mint the token once and retry.
-async function authedPost(cms, path, makeBody) {
+// Authenticated write (POST/PUT): attaches the accessToken (x-upload-token header) and builds the
+// body via `makeBody(teamId)` (teamId from the token exchange). On a 401 we re-mint once and retry.
+async function authedWrite(cms, method, path, makeBody) {
   const send = async (auth) => {
-    cms.log?.('POST /api/v1' + path + ' →');
+    cms.log?.(method + ' /api/v1' + path + ' →');
     const body = makeBody(auth.teamId);
     cms.log?.(body);
     return fetch(cms.baseUrl + '/api/v1' + path, {
-      method: 'POST',
+      method,
       // Custom header (not Authorization) so the API gateway doesn't intercept it as a
       // Zitadel bearer before it reaches the CMS.
       headers: { 'content-type': 'application/json', 'x-upload-token': auth.accessToken },
@@ -373,7 +379,7 @@ async function authedPost(cms, path, makeBody) {
     const hint = (res.status === 401 || res.status === 403)
       ? ' — check your CMS-Two upload key (cms.accessId / cms.secret).'
       : '';
-    throw sdkError('cms', 'CMS-Two ' + path + ' failed: ' + detail + hint);
+    throw sdkError('cms', 'CMS-Two ' + method + ' ' + path + ' failed: ' + detail + hint);
   }
   return json;
 }
@@ -404,7 +410,7 @@ async function authedGet(cms, path) {
 // Register the file in the media library. Creates a media-video keyed by the ByteArk
 // videoKey; ByteArk's webhook later finds it by that key and updates mediaVideoStatus.
 export async function createMediaVideo(cms, { videoKey, file }) {
-  const json = await authedPost(cms, '/media/files', (teamId) => ({
+  const json = await authedWrite(cms, 'POST', '/media/files', (teamId) => ({
     type: 'video',
     videos: [{
       teamId,
@@ -426,7 +432,7 @@ export async function createMediaVideo(cms, { videoKey, file }) {
 // Create the Video record from that media-video. The video item is the media's data
 // + metaInfo; passing media.id links the two (so the webhook's status also reaches the video).
 export async function createVideo(cms, { media, title, tagline, programId }) {
-  const json = await authedPost(cms, '/videos', (teamId) => ({
+  const json = await authedWrite(cms, 'POST', '/videos', (teamId) => ({
     teamId,
     videos: [{
       id: media.id,
@@ -463,6 +469,59 @@ export async function createVideo(cms, { media, title, tagline, programId }) {
 export async function getVideoById(cms, videoId) {
   const res = await fetch(cms.baseUrl + '/api/v1/videos/' + videoId);
   return res.json();
+}
+
+// Update an existing video's editable fields (currently title + programId). The CMS update is a
+// full PUT, so we fetch the current video, override the given fields, and send the whole record
+// back — everything you don't pass is preserved. Only fields present in the patch are changed.
+// Pass programId '' (or null) to unlink the program.
+export async function updateVideo(cms, videoId, { title, programId } = {}) {
+  const current = await getVideoById(cms, videoId);   // public GET, no token
+  if (!current || !current.id) {
+    throw sdkError('cms', 'CMS-Two video ' + videoId + ' not found.');
+  }
+  // Preserve the video's taxonomy terms across the round-trip. The update body keys terms by
+  // reqBodyFieldName (e.g. "tagIds") but the GET returns them under resBodyFieldName (e.g. "tags"),
+  // so we fetch the spec once to bridge the names — otherwise the PUT would clear the terms.
+  const keyMap = await getVideoTermFieldMap(cms);
+  return authedWrite(cms, 'PUT', '/videos/' + videoId, () => ({
+    ...current,
+    ...(title !== undefined ? { title } : {}),
+    ...(programId !== undefined ? { programId: programId || null } : {}),
+    termIds: termsToTermIds(current.terms, keyMap),
+  }));
+}
+
+// Fetch (and cache) the video term-field name map: resBodyFieldName → reqBodyFieldName.
+// Public endpoint, no token. Only "tags"/"primaryTags" differ from their request names in the
+// default spec, but we read it from the server so custom specs work too.
+async function getVideoTermFieldMap(cms) {
+  if (cms._videoTermFieldMap) return cms._videoTermFieldMap;
+  const res = await fetch(cms.baseUrl + '/api/v1/settings/custom-fields?limit=50');
+  const { data = [] } = await res.json().catch(() => ({ data: [] }));
+  const videoSpec = (data || []).find((d) => d.type === 'video');
+  const map = {};
+  for (const s of videoSpec?.settings || []) {
+    if (s.type === 'term' && s.resBodyFieldName && s.reqBodyFieldName) {
+      map[s.resBodyFieldName] = s.reqBodyFieldName;
+    }
+  }
+  cms._videoTermFieldMap = map;
+  return map;
+}
+
+// Convert the GET response's `terms` object (keyed by resBodyFieldName, holding full term objects)
+// into the update body's `termIds` (keyed by reqBodyFieldName, holding { value, isCreated } objects).
+// Preserves each field's single/array shape. Empty terms → {}.
+function termsToTermIds(terms, keyMap) {
+  const toEntry = (t) => ({ value: (t && (t.id ?? t.docId ?? t.value)) ?? t, isCreated: false });
+  const out = {};
+  for (const [resKey, val] of Object.entries(terms || {})) {
+    const reqKey = keyMap[resKey] || resKey;
+    if (Array.isArray(val)) out[reqKey] = val.map(toEntry);
+    else if (val && typeof val === 'object') out[reqKey] = toEntry(val);
+  }
+  return out;
 }
 
 // List the key's team's programs. Sends the x-upload-token (authenticated GET) plus the team's id

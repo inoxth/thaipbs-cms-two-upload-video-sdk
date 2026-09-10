@@ -6,6 +6,12 @@ import { t, initI18n } from './i18n.js';
 // ── tiny DOM helpers ──────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
 const log = (m) => { $('log').textContent += (typeof m === 'string' ? m : JSON.stringify(m, null, 2)) + '\n'; };
+// Replace a <select>'s options below the first `keep` sentinel ones.
+const fillSelect = (id, items, keep = 0) => {
+  const sel = $(id);
+  sel.length = keep;
+  for (const [text, value] of items) sel.add(new Option(text, value));
+};
 const setStatus = (text, kind = 'info') => {   // kind: 'info' | 'ok' | 'err'
   $('status').className = 'status ' + kind;
   $('status').textContent = text;
@@ -62,6 +68,7 @@ async function handleUpload() {
       title: $('title').value.trim() || file.name,
       description: $('description').value.trim(),
       programId: $('program').value,
+      categoryId: $('category').value,
     }]);
     const [job] = await uploadManager.start();   // resolves when the queue is drained
     if (job.status !== 'completed') return;      // failure already shown by onUploadFailed
@@ -128,13 +135,14 @@ $('refresh').addEventListener('click', async () => {
 });
 
 // ── program dropdown ────────────────────────────────────────────────────────────────
+const programOption = (p) => [p.title + (p.slugCode ? ' (' + p.slugCode + ')' : ''), p.id];
+
 $('loadPrograms').addEventListener('click', async () => {
   if (!$('accessId').value.trim() || !$('secret').value.trim()) return alert(t('alert.enterCreds'));
   const btn = $('loadPrograms'); btn.disabled = true; btn.textContent = t('btn.loading');
   try {
     const data = await uploader().listPrograms();
-    $('program').innerHTML = '<option value="">' + t('opt.none') + '</option>';
-    for (const p of data) $('program').add(new Option(p.title + (p.slugCode ? ' (' + p.slugCode + ')' : ''), p.id));
+    fillSelect('program', [[t('opt.none'), '']].concat(data.map(programOption)));
     log(t('log.loadedPrograms', data.length));
   } catch (e) { alert(t('alert.loadFailed', e.message)); }
   finally { btn.disabled = false; btn.textContent = t('btn.loadPrograms'); }
@@ -147,9 +155,7 @@ $('updLoadPrograms').addEventListener('click', async () => {
   const btn = $('updLoadPrograms'); btn.disabled = true; btn.textContent = t('btn.loading');
   try {
     const data = await uploader().listPrograms();
-    const sel = $('updProgram');
-    sel.length = 2;   // keep "— keep current —" and "— none (unlink) —"
-    for (const p of data) sel.add(new Option(p.title + (p.slugCode ? ' (' + p.slugCode + ')' : ''), p.id));
+    fillSelect('updProgram', data.map(programOption), 2);   // keep the two sentinel options
   } catch (e) { alert(t('alert.loadFailed', e.message)); }
   finally { btn.disabled = false; btn.textContent = t('btn.loadPrograms'); }
 });
@@ -166,8 +172,10 @@ $('updateVideoBtn').addEventListener('click', async () => {
   if (newTitle) patch.title = newTitle;
   const prog = $('updProgram').value;
   if (prog !== '__keep__') patch.programId = prog;   // '' → unlink, id → set
+  const cat = $('updCategory').value;
+  if (cat !== '__keep__') patch.categoryId = cat;    // '' → clear, termId → set
 
-  if (Object.keys(patch).length === 0) return alert('Nothing to change — set a title and/or program.');
+  if (Object.keys(patch).length === 0) return alert('Nothing to change — set a title, program and/or category.');
 
   const btn = $('updateVideoBtn'); btn.disabled = true;
   $('updStatus').className = 'status'; $('updStatus').textContent = 'Updating…';
@@ -235,6 +243,51 @@ async function fetchVideos(cursor = {}) {
 }
 $('listVideosBtn').addEventListener('click', () => fetchVideos());
 
+// ── categories ──────────────────────────────────────────────────────────────────
+// Public endpoint — needs only the CMS base URL, no credentials. Fetched once per base URL and
+// shared by the two dropdowns and the term-ids card (uploader() builds a fresh SDK each call, so
+// the SDK's own per-context cache can't help here).
+let categories = { base: null, terms: null };
+function loadCategories() {
+  const base = $('cmsBase').value;
+  if (categories.base !== base) {
+    // drop the memo on failure, so a fixed base URL / proxy can be retried
+    const terms = uploader().listVideoTerms('video-category').catch((e) => { categories.base = null; throw e; });
+    categories = { base, terms };
+  }
+  return categories.terms;
+}
+
+async function loadCategoryOptions() {
+  try {
+    const options = (await loadCategories()).map((t) => [t.label + ' (' + t.slugCode + ')', t.id]);
+    fillSelect('category', options, 1);            // keep "— none —"
+    fillSelect('updCategory', options, 2);         // keep "— keep current —" / "— none (clear) —"
+  } catch (e) { log('could not load categories: ' + e.message); }
+}
+loadCategoryOptions();
+$('cmsBase').addEventListener('change', loadCategoryOptions);
+
+// ── term ids demo ────────────────────────────────────────────────────────────────
+$('loadCategories').addEventListener('click', async () => {
+  const btn = $('loadCategories'); btn.disabled = true; btn.textContent = t('btn.loading');
+  const out = $('termResult');
+  out.innerHTML = '<div class="video-row skeleton"><span class="sk sk-title"></span><span class="sk sk-meta"></span></div>'.repeat(5);
+  try {
+    const terms = await loadCategories();
+    out.innerHTML = '';
+    for (const term of terms) {
+      const row = document.createElement('div'); row.className = 'video-row';
+      row.innerHTML = '<span class="video-title"></span><span class="video-meta"></span>';
+      row.querySelector('.video-title').textContent = term.label + ' — ' + term.slugCode;
+      row.querySelector('.video-meta').textContent = term.id;
+      out.appendChild(row);
+    }
+    log(t('log.loadedTerms', terms.length));
+  } catch (e) { out.innerHTML = ''; alert(t('alert.loadFailed', e.message)); }
+  finally { btn.disabled = false; btn.textContent = t('btn.loadCategories'); }
+});
+
 // ── show/hide the masked API secret (CSS class swaps which eye icon shows) ───────────
 $('toggleSecret').addEventListener('click', () => {
   const reveal = $('secret').type === 'password';
@@ -290,6 +343,7 @@ function renderLiveCode() {
   const base = $('cmsBase').value || 'https://console-program-new.thaipbsbeta.com';
   const file = $('file').files[0];
   const programId = $('program').value;
+  const categoryId = $('category').value;
 
   $('liveCode').querySelector('code').textContent =
 `import { CmsTwoSdk } from './sdk.js';
@@ -312,7 +366,7 @@ const uploadManager = new CmsTwoSdk({
 uploadManager.addUploadJobs([{
   file,${file ? '   // ' + file.name : '   // choose a video file below'}
   title: ${orPh('title', '<title>')},
-  description: ${orPh('description', '')},${programId ? `\n  programId: ${str(programId)},` : ''}
+  description: ${orPh('description', '')},${programId ? `\n  programId: ${str(programId)},` : ''}${categoryId ? `\n  categoryId: ${str(categoryId)},` : ''}
 }]);
 
 await uploadManager.start();`;

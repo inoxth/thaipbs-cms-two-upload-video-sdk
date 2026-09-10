@@ -73,16 +73,17 @@ export class CmsTwoSdk {
     this.jobQueue = [];
   }
 
-  // Queue files for upload. Accepts a FileList / File[] or [{ file, title?, description?, programId? }].
-  // Returns the created jobs; call start() to run them.
+  // Queue files for upload. Accepts a FileList / File[] or
+  // [{ file, title?, description?, programId?, categoryId? }]. Returns the created jobs; call start().
   addUploadJobs(files) {
     const jobs = Array.from(files, (f) => (f instanceof File ? { file: f } : f))
-      .map(({ file, title, description, programId }) => ({
+      .map(({ file, title, description, programId, categoryId }) => ({
         file,
         name: file.name,
         title: title || file.name,
         description,
         programId,
+        categoryId,
         status: 'pending',        // pending → uploading → creating-media → creating-video → completed | failed
         progress: { percent: 0 },
         media: null, video: null,
@@ -125,6 +126,7 @@ export class CmsTwoSdk {
           job.video = await createVideo(cms, {
             media: job.media,
             title: job.title, tagline: job.description, programId: job.programId,
+            categoryId: job.categoryId,
           });
 
           job.status = 'completed';
@@ -143,7 +145,7 @@ export class CmsTwoSdk {
 
   // Starts the upload and returns a job handle: attach .onProgress/.onStatus, await it for the
   // created records, or await .whenReady() for the playable video.
-  upload(file, { title, description, programId } = {}) {
+  upload(file, { title, description, programId, categoryId } = {}) {
     const listeners = { progress: [], status: [] };
 
     // Start on a microtask so listeners attached right after this call still see every event.
@@ -152,6 +154,7 @@ export class CmsTwoSdk {
       title: title || file.name,
       description,
       programId,
+      categoryId,
       byteark: this.byteark,
       cms: this.cms,
       onProgress: (pct) => listeners.progress.forEach((fn) => fn(pct)),
@@ -197,16 +200,23 @@ export class CmsTwoSdk {
     return listVideos(this.cms, options);
   }
 
-  // Update a video's editable fields (title, programId). Fetches the current record and PUTs it
-  // back with your overrides; unspecified fields are preserved. programId '' / null unlinks it.
-  updateVideo(videoId, { title, programId } = {}) {
-    return updateVideo(this.cms, videoId, { title, programId });
+  // List one term field's selectable terms, e.g. listVideoTerms('video-category') → the 5
+  // categories as [{ id, slugCode, label }]. `id` is the termId to pass as categoryId.
+  listVideoTerms(fieldName, options = {}) {
+    return listVideoTerms(this.cms, fieldName, options);
+  }
+
+  // Update a video's editable fields (title, programId, categoryId). Fetches the current record
+  // and PUTs it back with your overrides; unspecified fields are preserved. programId / categoryId
+  // '' or null clears that link. categoryId is a termId — see listVideoTerms('video-category').
+  updateVideo(videoId, { title, programId, categoryId } = {}) {
+    return updateVideo(this.cms, videoId, { title, programId, categoryId });
   }
 }
 
 // ── the underlying one-shot function (CmsTwoSdk.upload wraps this) ───────────────────
 export async function uploadVideo({
-  file, title, description, programId,
+  file, title, description, programId, categoryId,
   byteark,                     // { formId, formSecret, projectKey }
   cms: cmsOptions,             // { baseUrl, accessId, secret, log? }  — or an already-built context
   onProgress = () => {},
@@ -229,7 +239,7 @@ export async function uploadVideo({
 
   // 3) create the Video record with the metadata (title / description / program)
   onStatus('creating-video');
-  const video = await createVideo(cms, { media, title, tagline: description, programId });
+  const video = await createVideo(cms, { media, title, tagline: description, programId, categoryId });
 
   onStatus('done');
   return { media, video };
@@ -431,7 +441,9 @@ export async function createMediaVideo(cms, { videoKey, file }) {
 
 // Create the Video record from that media-video. The video item is the media's data
 // + metaInfo; passing media.id links the two (so the webhook's status also reaches the video).
-export async function createVideo(cms, { media, title, tagline, programId }) {
+// `categoryId` is a video-category termId; the create endpoint takes terms as internalRelatedTerms
+// (it ignores metaInfo.termIds), so it goes in with the same request.
+export async function createVideo(cms, { media, title, tagline, programId, categoryId }) {
   const json = await authedWrite(cms, 'POST', '/videos', (teamId) => ({
     teamId,
     videos: [{
@@ -459,6 +471,7 @@ export async function createVideo(cms, { media, title, tagline, programId }) {
         tagline,                                 // description is stored as `tagline`
         ...(programId ? { programId } : {}),
       },
+      ...(categoryId ? { internalRelatedTerms: [{ key: CATEGORY_FIELD, docId: categoryId }] } : {}),
     }],
   }));
   return json.videos[0];
@@ -466,55 +479,85 @@ export async function createVideo(cms, { media, title, tagline, programId }) {
 
 // Look up a video by its id (poll until video.mediaVideo.mediaVideoStatus is 'completed').
 // Public endpoint — no token needed, so polling works for the whole transcoding duration.
-export async function getVideoById(cms, videoId) {
-  const res = await fetch(cms.baseUrl + '/api/v1/videos/' + videoId);
-  return res.json();
+export function getVideoById(cms, videoId) {
+  return publicGet(cms, '/videos/' + videoId);
 }
 
-// Update an existing video's editable fields (currently title + programId). The CMS update is a
+// Update an existing video's editable fields (title, programId, categoryId). The CMS update is a
 // full PUT, so we fetch the current video, override the given fields, and send the whole record
 // back — everything you don't pass is preserved. Only fields present in the patch are changed.
-// Pass programId '' (or null) to unlink the program.
-export async function updateVideo(cms, videoId, { title, programId } = {}) {
-  const current = await getVideoById(cms, videoId);   // public GET, no token
+// Pass programId / categoryId '' (or null) to clear it; categoryId is a video-category termId.
+export async function updateVideo(cms, videoId, { title, programId, categoryId } = {}) {
+  // Both GETs are public and independent. The spec bridges term names: the update body keys terms
+  // by reqBodyFieldName (e.g. "tagIds") but the GET returns them under resBodyFieldName ("tags"),
+  // so without it the PUT would clear the terms.
+  const [current, keyMap] = await Promise.all([getVideoById(cms, videoId), getVideoTermFieldMap(cms)]);
   if (!current || !current.id) {
     throw sdkError('cms', 'CMS-Two video ' + videoId + ' not found.');
   }
-  // Preserve the video's taxonomy terms across the round-trip. The update body keys terms by
-  // reqBodyFieldName (e.g. "tagIds") but the GET returns them under resBodyFieldName (e.g. "tags"),
-  // so we fetch the spec once to bridge the names — otherwise the PUT would clear the terms.
-  const keyMap = await getVideoTermFieldMap(cms);
+  const termIds = termsToTermIds(current.terms, keyMap);
+  if (categoryId) termIds[CATEGORY_FIELD] = { value: categoryId, isCreated: true };
+  else if (categoryId !== undefined) delete termIds[CATEGORY_FIELD];
   return authedWrite(cms, 'PUT', '/videos/' + videoId, () => ({
     ...current,
     ...(title !== undefined ? { title } : {}),
     ...(programId !== undefined ? { programId: programId || null } : {}),
-    termIds: termsToTermIds(current.terms, keyMap),
+    termIds,
   }));
 }
 
-// Fetch (and cache) the video term-field name map: resBodyFieldName → reqBodyFieldName.
-// Public endpoint, no token. Only "tags"/"primaryTags" differ from their request names in the
-// default spec, but we read it from the server so custom specs work too.
+// ponytail: the category is just one term field, hardcoded because it's the only one with a
+// first-class option. Anything else goes through termIds directly.
+// isCreated:true means "value is an existing termId" — with false the CMS *creates* a new term
+// labelled with whatever you sent (apps/server/src/utils/customField.ts).
+// The create body keys terms by the spec's `key` and the update body by `reqBodyFieldName`; those
+// are equal for video-category but NOT for others (tags: key 'tag', reqBodyFieldName 'tagIds'), so
+// this one constant only stands in for both here.
+const CATEGORY_FIELD = 'video-category';
+
+// Fetch (and cache) the video's term-field specs. Public endpoint, no token. The *promise* is
+// cached, so concurrent first-callers share one request instead of each firing their own.
+function getVideoTermFields(cms) {
+  cms._videoTermFields ??= publicGet(cms, '/settings/custom-fields?limit=50').then(({ data = [] }) => {
+    const videoSpec = data.find((d) => d.type === 'video');
+    return (videoSpec?.settings || []).filter((s) => s.type === 'term');
+  });
+  return cms._videoTermFields;
+}
+
+// GET an endpoint that needs no token (the CMS serves these publicly).
+function publicGet(cms, path) {
+  return fetch(cms.baseUrl + '/api/v1' + path).then((r) => r.json()).catch(() => ({}));
+}
+
+// resBodyFieldName → reqBodyFieldName. Only "tags"/"primaryTags" differ in the default spec,
+// but we read it from the server so custom specs work too.
 async function getVideoTermFieldMap(cms) {
-  if (cms._videoTermFieldMap) return cms._videoTermFieldMap;
-  const res = await fetch(cms.baseUrl + '/api/v1/settings/custom-fields?limit=50');
-  const { data = [] } = await res.json().catch(() => ({ data: [] }));
-  const videoSpec = (data || []).find((d) => d.type === 'video');
   const map = {};
-  for (const s of videoSpec?.settings || []) {
-    if (s.type === 'term' && s.resBodyFieldName && s.reqBodyFieldName) {
-      map[s.resBodyFieldName] = s.reqBodyFieldName;
-    }
+  for (const s of await getVideoTermFields(cms)) {
+    if (s.resBodyFieldName && s.reqBodyFieldName) map[s.resBodyFieldName] = s.reqBodyFieldName;
   }
-  cms._videoTermFieldMap = map;
   return map;
+}
+
+// List the selectable terms of one video term field — e.g. listVideoTerms(cms, 'video-category')
+// returns the 5 categories. Public endpoint, no token. Returns [{ id, slugCode, label }] — `id` is
+// the termId a video's termIds / internalRelatedTerms takes.
+export async function listVideoTerms(cms, fieldName, { limit = 100 } = {}) {
+  const field = (await getVideoTermFields(cms)).find((s) => s.reqBodyFieldName === fieldName);
+  if (!field) throw sdkError('cms', 'No video term field named ' + fieldName + '.');
+  const qs = new URLSearchParams({ taxonomyIds: field.taxonomyId, limit });
+  const { data = [] } = await publicGet(cms, '/terms?' + qs);
+  // ponytail: one page. Taxonomies here are small (category = 5); paginate if tags ever need it.
+  return data.map((t) => ({ id: t.id, slugCode: t.slugCode, label: t.label }));
 }
 
 // Convert the GET response's `terms` object (keyed by resBodyFieldName, holding full term objects)
 // into the update body's `termIds` (keyed by reqBodyFieldName, holding { value, isCreated } objects).
-// Preserves each field's single/array shape. Empty terms → {}.
+// Existing terms go back as { value: <termId>, isCreated: true }. Preserves each field's
+// single/array shape. Empty terms → {}.
 function termsToTermIds(terms, keyMap) {
-  const toEntry = (t) => ({ value: (t && (t.id ?? t.docId ?? t.value)) ?? t, isCreated: false });
+  const toEntry = (t) => ({ value: (t && (t.id ?? t.docId ?? t.value)) ?? t, isCreated: true });
   const out = {};
   for (const [resKey, val] of Object.entries(terms || {})) {
     const reqKey = keyMap[resKey] || resKey;

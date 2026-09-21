@@ -12,6 +12,8 @@ const fillSelect = (id, items, keep = 0) => {
   sel.length = keep;
   for (const [text, value] of items) sel.add(new Option(text, value));
 };
+// <input type="datetime-local"> gives local "2026-09-21T10:30"; the CMS wants a full ISO stamp.
+const isoFrom = (id) => ($(id).value ? new Date($(id).value).toISOString() : '');
 const setStatus = (text, kind = 'info') => {   // kind: 'info' | 'ok' | 'err'
   $('status').className = 'status ' + kind;
   $('status').textContent = text;
@@ -63,12 +65,20 @@ async function handleUpload() {
       onUploadFailed: (_job, error) => { setStatus(t('status.error'), 'err'); log(String(error)); },
     });
 
+    // The cover image is its own media record, so it uploads first and rides along as images.
+    const cover = $('image').files[0];
+    const images = cover ? [await uploadManager.uploadImage(cover)] : undefined;
+
     uploadManager.addUploadJobs([{
       file,
       title: $('title').value.trim() || file.name,
       description: $('description').value.trim(),
       programId: $('program').value,
       categoryId: $('category').value,
+      firstAiredAt: isoFrom('firstAiredAt'),
+      publishStatus: $('publishStatus').value,
+      publishedAt: isoFrom('publishedAt'),
+      images,
     }]);
     const [job] = await uploadManager.start();   // resolves when the queue is drained
     if (job.status !== 'completed') return;      // failure already shown by onUploadFailed
@@ -174,13 +184,22 @@ $('updateVideoBtn').addEventListener('click', async () => {
   if (prog !== '__keep__') patch.programId = prog;   // '' → unlink, id → set
   const cat = $('updCategory').value;
   if (cat !== '__keep__') patch.categoryId = cat;    // '' → clear, termId → set
+  const aired = isoFrom('updFirstAiredAt');
+  if (aired) patch.firstAiredAt = aired;
+  const pub = $('updPublishStatus').value;
+  if (pub !== '__keep__') patch.publishStatus = pub;
+  const publishAt = isoFrom('updPublishedAt');
+  if (publishAt) patch.publishedAt = publishAt;
+  const cover = $('updImage').files[0];
 
-  if (Object.keys(patch).length === 0) return alert('Nothing to change — set a title, program and/or category.');
+  if (!cover && Object.keys(patch).length === 0) return alert('Nothing to change — fill in a field.');
 
   const btn = $('updateVideoBtn'); btn.disabled = true;
   $('updStatus').className = 'status'; $('updStatus').textContent = 'Updating…';
   try {
-    const updated = await uploader().updateVideo(videoId, patch);
+    const sdk = uploader();                          // one instance, so the token is minted once
+    if (cover) patch.images = [await sdk.uploadImage(cover)];
+    const updated = await sdk.updateVideo(videoId, patch);
     $('updStatus').className = 'status ok';
     $('updStatus').textContent = 'Updated ✓  title: ' + (updated.title ?? '—') + '  ·  programId: ' + (updated.programId ?? 'none');
     log('updated video:');
@@ -242,6 +261,16 @@ async function fetchVideos(cursor = {}) {
   finally { btn.disabled = false; btn.textContent = t('btn.listVideos'); }
 }
 $('listVideosBtn').addEventListener('click', () => fetchVideos());
+
+// ── publish-at field: only meaningful for scheduled (required) and published (optional) ────
+for (const [select, wrap] of [['publishStatus', 'publishAtWrap'], ['updPublishStatus', 'updPublishAtWrap']]) {
+  const sync = () => {
+    $(wrap).hidden = !['scheduled', 'published'].includes($(select).value);
+    if ($(wrap).hidden) $(wrap).querySelector('input').value = '';   // don't send what's not shown
+  };
+  $(select).addEventListener('change', sync);
+  sync();
+}
 
 // ── categories ──────────────────────────────────────────────────────────────────
 // Public endpoint — needs only the CMS base URL, no credentials. Fetched once per base URL and
@@ -342,8 +371,14 @@ function renderLiveCode() {
   const secret = (id, ph) => (v(id) ? "'•••••'" : str(ph)); // never print the real secret
   const base = $('cmsBase').value || 'https://console-program-new.thaipbsbeta.com';
   const file = $('file').files[0];
-  const programId = $('program').value;
-  const categoryId = $('category').value;
+  const cover = $('image').files[0];
+  const optional = [
+    ['programId', $('program').value],
+    ['categoryId', $('category').value],
+    ['firstAiredAt', isoFrom('firstAiredAt')],
+    ['publishStatus', $('publishStatus').value],
+    ['publishedAt', isoFrom('publishedAt')],
+  ].filter(([, value]) => value).map(([key, value]) => `\n  ${key}: ${str(value)},`).join('');
 
   $('liveCode').querySelector('code').textContent =
 `import { CmsTwoSdk } from './sdk.js';
@@ -366,7 +401,7 @@ const uploadManager = new CmsTwoSdk({
 uploadManager.addUploadJobs([{
   file,${file ? '   // ' + file.name : '   // choose a video file below'}
   title: ${orPh('title', '<title>')},
-  description: ${orPh('description', '')},${programId ? `\n  programId: ${str(programId)},` : ''}${categoryId ? `\n  categoryId: ${str(categoryId)},` : ''}
+  description: ${orPh('description', '')},${optional}${cover ? '\n  images: [await uploadManager.uploadImage(coverFile)],' : ''}
 }]);
 
 await uploadManager.start();`;

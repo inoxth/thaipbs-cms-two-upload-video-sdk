@@ -30,6 +30,7 @@
         <a href="#listVideos">listVideos()</a>
         <a href="#listPrograms">listPrograms()</a>
         <a href="#listVideoTerms">listVideoTerms()</a>
+        <a href="#uploadImage">uploadImage()</a>
         <div class="nav-group">Types</div>
         <a href="#job">Job</a>
         <div class="nav-group">Low-level functions</div>
@@ -177,7 +178,7 @@ player.src = video.mediaVideo.embeddedUrl;</code></pre>
         <table class="params">
           <thead><tr><th>Param</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>files</code></td><td>FileList | File[] | object[]</td><td>Either raw files, or <code>{ file, title?, description?, programId?, categoryId? }</code> objects to attach metadata per file. A bare <code>File</code> uses its filename as the title.</td></tr>
+            <tr><td><code>files</code></td><td>FileList | File[] | object[]</td><td>Either raw files, or <code>{ file, title?, description?, programId?, categoryId?, firstAiredAt?, publishStatus?, publishedAt?, images? }</code> objects to attach metadata per file. A bare <code>File</code> uses its filename as the title.</td></tr>
           </tbody>
         </table>
 <pre class="code" data-lang="javascript"><code>uploadManager.addUploadJobs(fileList);                       // from an &lt;input type="file"&gt;
@@ -214,7 +215,7 @@ const ok = jobs.filter((j) =&gt; j.status === 'completed');</code></pre>
           <thead><tr><th>Param</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>file</code></td><td>File</td><td>A File from an <code>&lt;input type="file"&gt;</code> or drag-and-drop.</td></tr>
-            <tr><td><code>metadata</code></td><td>object</td><td>Optional <code>{ title?, description?, programId?, categoryId? }</code>.</td></tr>
+            <tr><td><code>metadata</code></td><td>object</td><td>Optional <code>{ title?, description?, programId?, categoryId?, firstAiredAt?, publishStatus?, publishedAt?, images? }</code>.</td></tr>
           </tbody>
         </table>
         <p>The handle has:</p>
@@ -373,13 +374,47 @@ if (res.hasNextPage) {
 const categories = await uploadManager.listVideoTerms('video-category');
 // [{ id: '681e20e246f78b171cf77d20', slugCode: 'show', label: 'ชมย้อนหลัง' }, …]
 
-await uploadManager.updateVideo(videoId, { categoryId: '681e20e246f78b171cf77d20' });</code></pre>
+await uploadManager.updateVideo(videoId, { categoryId: '681e20e246f78b171cf77d20' });
+
+// broadcast date + publish it
+await uploadManager.updateVideo(videoId, {
+  firstAiredAt: '2026-09-21T03:30:00.000Z',
+  publishStatus: 'published',
+});
+
+// or schedule it — the CMS flips it to published once publishedAt passes
+await uploadManager.updateVideo(videoId, {
+  publishStatus: 'scheduled',
+  publishedAt: '2026-10-01T02:00:00.000Z',
+});
+
+// replace the cover image
+const image = await uploadManager.uploadImage(fileInput.files[0]);
+await uploadManager.updateVideo(videoId, { images: [image] });</code></pre>
+      </section>
+
+      <!-- uploadImage -->
+      <section id="uploadImage" class="ref">
+        <h3><code>uploadImage(file, { parentFolderId? })</code> <span class="badge">async → Media</span></h3>
+        <p>Upload an image into the team's media library and get back the media record — hand it to
+           <code>upload()</code> / <code>addUploadJobs()</code> / <code>updateVideo()</code> as
+           <code>images: [image]</code>. Multipart <code>POST /media/files</code>, the same endpoint
+           and permission the video media uses, so your upload key already covers it.</p>
+        <p class="hint">A video's images can only be set by an update, so passing <code>images</code> to an
+           upload attaches them in a follow-up <code>updateVideo()</code> — you'll see an extra
+           <code>attaching-images</code> status phase, and it costs a few more requests.</p>
+<pre class="code" data-lang="javascript"><code>const image = await uploadManager.uploadImage(file);   // { id, key, originalUrl, imageSizes, … }
+
+uploadManager.addUploadJobs([{ file: videoFile, title: 'My video', images: [image] }]);</code></pre>
       </section>
 
       <!-- updateVideo -->
       <section id="updateVideo" class="ref">
-        <h3><code>updateVideo(videoId, { title, programId, categoryId })</code> <span class="badge">async → Video</span></h3>
-        <p>Update an existing video's <code>title</code>, <code>programId</code> and/or <code>categoryId</code>. The CMS update is a
+        <h3><code>updateVideo(videoId, { title, programId, categoryId, firstAiredAt, publishStatus, publishedAt, images })</code> <span class="badge">async → Video</span></h3>
+        <p>Update an existing video. The patch takes anything the CMS video body holds — <code>title</code>,
+           <code>programId</code>, <code>firstAiredAt</code>, <code>seoTitle</code>, … — plus the three the SDK
+           translates for you: <code>categoryId</code>, <code>publishStatus</code>/<code>publishedAt</code> and
+           <code>images</code>. The CMS update is a
            full <code>PUT</code>, so the SDK fetches the current record, applies your overrides, and sends the
            whole thing back — <strong>everything you don't pass is preserved</strong> (tags, publish state, media, …).</p>
         <table class="params">
@@ -388,6 +423,10 @@ await uploadManager.updateVideo(videoId, { categoryId: '681e20e246f78b171cf77d20
             <tr><td><code>videoId</code></td><td>string</td><td>The Thai PBS Video CMS video id (e.g. from <code>job.video.id</code>).</td></tr>
             <tr><td><code>title</code></td><td>string?</td><td>New title. Omit to keep the current one.</td></tr>
             <tr><td><code>programId</code></td><td>string? | null</td><td>Link the video to a program. Omit to keep; pass <code>''</code> or <code>null</code> to unlink.</td></tr>
+            <tr><td><code>firstAiredAt</code></td><td>string? | null</td><td>Broadcast date as an ISO timestamp. Omit to keep; <code>''</code> / <code>null</code> makes the CMS fall back to the episode's date, then the publish date, then now.</td></tr>
+            <tr><td><code>publishStatus</code></td><td>string?</td><td><code>'draft'</code>, <code>'published'</code> or <code>'scheduled'</code>. Sent as both <code>publishStatus</code> and <code>publishType</code>.</td></tr>
+            <tr><td><code>publishedAt</code></td><td>string? | null</td><td>ISO timestamp for when the video goes live. <strong>Required with <code>'scheduled'</code></strong> (the SDK throws without it). On an update, <code>'published'</code> without one gets now and a draft clears it; on a create it's stored as given (<code>null</code> if omitted).</td></tr>
+            <tr><td><code>images</code></td><td>object[]?</td><td>Media records from <a href="#uploadImage"><code>uploadImage()</code></a>, replacing the video's images. <code>useFor</code> defaults to <code>'display'</code>.</td></tr>
             <tr><td><code>categoryId</code></td><td>string? | null</td><td>The <code>video-category</code> <strong>termId</strong> — see <a href="#listVideoTerms"><code>listVideoTerms()</code></a>. Omit to keep; <code>''</code> / <code>null</code> clears it. Other term fields (tags, …) are preserved untouched.</td></tr>
           </tbody>
         </table>
@@ -413,7 +452,8 @@ await uploadManager.updateVideo(videoId, { categoryId: '681e20e246f78b171cf77d20
           <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>file</code> / <code>name</code></td><td>File / string</td><td>The source file and its filename.</td></tr>
-            <tr><td><code>title</code> / <code>description</code> / <code>programId</code> / <code>categoryId</code></td><td>string</td><td>Metadata for the video record. <code>categoryId</code> is a <code>video-category</code> termId.</td></tr>
+            <tr><td><code>title</code> / <code>description</code> / <code>programId</code> / <code>categoryId</code> / <code>firstAiredAt</code> / <code>publishStatus</code> / <code>publishedAt</code></td><td>string</td><td>Metadata for the video record; <code>categoryId</code> is a <code>video-category</code> termId.</td></tr>
+            <tr><td><code>images</code></td><td>object[]</td><td>Records from <code>uploadImage()</code>, attached after the create.</td></tr>
             <tr><td><code>status</code></td><td>string</td><td><code>'pending' → 'uploading' → 'creating-media' → 'creating-video' → 'completed'</code> (or <code>'failed'</code>).</td></tr>
             <tr><td><code>progress</code></td><td>object</td><td><code>{ percent }</code> — upload progress.</td></tr>
             <tr><td><code>media</code> / <code>video</code></td><td>object</td><td>The created Thai PBS Video CMS records (set after each step).</td></tr>
@@ -433,9 +473,10 @@ await uploadManager.updateVideo(videoId, { categoryId: '681e20e246f78b171cf77d20
             <tr><td><code>makeCmsContext({ baseUrl, accessId, secret, log? })</code></td><td>Build the <code>cms</code> context (base URL + credentials + a token cache) the calls below need. The context signs/exchanges tokens on demand and caches the accessToken + teamId.</td></tr>
             <tr><td><code>uploadToByteArkStream(config, file, { title }, onProgress)</code></td><td>Upload the file only; resolves with the raw ByteArk key. You only need this if you're wiring the steps yourself — <code>createMediaVideo</code> consumes it internally.</td></tr>
             <tr><td><code>createMediaVideo(cms, { videoKey, file })</code></td><td>Register the media-video (<code>POST /media/files</code>, sends the token in the <code>x-upload-token</code> header). teamId is filled from the key. Returns the media.</td></tr>
-            <tr><td><code>createVideo(cms, { media, title, tagline, programId, categoryId })</code></td><td>Create the video record (<code>POST /videos</code>, <code>x-upload-token</code> header), linked to the media. Returns the video. <code>categoryId</code> rides along as <code>internalRelatedTerms</code> — no extra request.</td></tr>
+            <tr><td><code>createVideo(cms, { media, title, tagline, programId, categoryId, firstAiredAt, publishStatus, publishedAt, images })</code></td><td>Create the video record (<code>POST /videos</code>, <code>x-upload-token</code> header), linked to the media. Returns the video. <code>categoryId</code> rides along as <code>internalRelatedTerms</code> — no extra request.</td></tr>
+            <tr><td><code>uploadImage(cms, file, { parentFolderId? })</code></td><td>Upload an image to the media library (multipart <code>POST /media/files</code>, <code>x-upload-token</code>). Returns the media record for <code>images</code>.</td></tr>
             <tr><td><code>getVideoById(cms, videoId)</code></td><td>Fetch a video (<code>GET /videos/:videoId</code>, public — no token); status + <code>embeddedUrl</code> are under <code>video.mediaVideo</code>.</td></tr>
-            <tr><td><code>updateVideo(cms, videoId, { title, programId, categoryId })</code></td><td>Update a video (<code>PUT /videos/:videoId</code>, <code>x-upload-token</code>). Fetches + re-sends the full record with your overrides; unspecified fields preserved. Returns the updated video.</td></tr>
+            <tr><td><code>updateVideo(cms, videoId, { title, programId, categoryId, firstAiredAt, publishStatus, publishedAt, images })</code></td><td>Update a video (<code>PUT /videos/:videoId</code>, <code>x-upload-token</code>). Fetches + re-sends the full record with your overrides; unspecified fields preserved. Returns the updated video.</td></tr>
             <tr><td><code>listVideos(cms, options?)</code></td><td>Search/list videos scoped to the key's team(s) (<code>GET /videos/search</code>, Atlas Search, sends the <code>x-upload-token</code>). Cursor-paginated — returns <code>{ data, nextToken, prevToken, hasNextPage, hasPrevPage }</code>. <code>options</code> = query string (limit, nextToken, prevToken, q, sortBy, …).</td></tr>
             <tr><td><code>listPrograms(cms)</code></td><td>List the key's team's programs (team derived from the key).</td></tr>
             <tr><td><code>listVideoTerms(cms, fieldName, { limit? })</code></td><td>List one term field's selectable terms (<code>GET /terms?taxonomyIds=…</code>, public). Returns <code>[{ id, slugCode, label }]</code> — <code>id</code> is the termId a video's <code>termIds</code> takes.</td></tr>
@@ -511,6 +552,27 @@ const fresh = await getVideoById(cms, video.id);</code></pre>
         <select id="category"><option value="" data-i18n="opt.none">— none —</option></select>
         <label data-i18n="label.title">Title</label><input id="title" placeholder="video title" />
         <label data-i18n="label.description">Description</label><input id="description" placeholder="video description" />
+        <div class="row" style="align-items:flex-end">
+          <div>
+            <label data-i18n="label.firstAiredAt">First aired at</label>
+            <input id="firstAiredAt" type="datetime-local" />
+          </div>
+          <div style="flex:1 1 160px">
+            <label data-i18n="label.publishStatus">Publish status</label>
+            <select id="publishStatus">
+              <option value="" data-i18n="opt.serverDefault">— default (draft) —</option>
+              <option value="draft">draft</option>
+              <option value="published">published</option>
+              <option value="scheduled">scheduled</option>
+            </select>
+          </div>
+        </div>
+        <div id="publishAtWrap" hidden>
+          <label><span data-i18n="label.publishedAt">Publish at</span> <span style="font-weight:400;color:var(--muted)" data-i18n="note.publishedAt">(required for scheduled — when it goes live)</span></label>
+          <input id="publishedAt" type="datetime-local" />
+        </div>
+        <label><span data-i18n="label.coverImage">Cover image</span> <span style="font-weight:400;color:var(--muted)" data-i18n="note.coverImage">(optional — uploaded to the media library, then attached)</span></label>
+        <input id="image" type="file" accept="image/*" />
         <label data-i18n="label.file">Video file</label><input id="file" type="file" accept="video/*" />
         <p class="hint" data-i18n="hint.video">One click: uploads the file → registers the media in Thai PBS Video CMS → creates the video record.</p>
       </section>
@@ -571,6 +633,27 @@ const fresh = await getVideoById(cms, video.id);</code></pre>
           <option value="__keep__" selected data-i18n="opt.keep">— keep current —</option>
           <option value="" data-i18n="opt.unlink">— none (clear) —</option>
         </select>
+        <div class="row" style="align-items:flex-end">
+          <div>
+            <label data-i18n="label.firstAiredAt">First aired at</label>
+            <input id="updFirstAiredAt" type="datetime-local" />
+          </div>
+          <div style="flex:1 1 160px">
+            <label data-i18n="label.publishStatus">Publish status</label>
+            <select id="updPublishStatus">
+              <option value="__keep__" selected data-i18n="opt.keep">— keep current —</option>
+              <option value="draft">draft</option>
+              <option value="published">published</option>
+              <option value="scheduled">scheduled</option>
+            </select>
+          </div>
+        </div>
+        <div id="updPublishAtWrap" hidden>
+          <label><span data-i18n="label.publishedAt">Publish at</span> <span style="font-weight:400;color:var(--muted)" data-i18n="note.publishedAt">(required for scheduled — when it goes live)</span></label>
+          <input id="updPublishedAt" type="datetime-local" />
+        </div>
+        <label data-i18n="label.coverImage">Cover image</label>
+        <input id="updImage" type="file" accept="image/*" />
         <button type="button" id="updateVideoBtn" class="btn-primary" style="margin-top:12px">Update video</button>
         <div><span id="updStatus" class="status"></span></div>
       </section>

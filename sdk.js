@@ -73,21 +73,23 @@ export class CmsTwoSdk {
     this.jobQueue = [];
   }
 
-  // Queue files for upload. Accepts a FileList / File[] or
-  // [{ file, title?, description?, programId?, categoryId? }]. Returns the created jobs; call start().
+  // Queue files for upload. Accepts a FileList / File[], or objects of { file } plus any video
+  // metadata createVideo takes (title, description, programId, categoryId, firstAiredAt,
+  // publishStatus, publishedAt, images — see the docs). Returns the created jobs; call start().
   addUploadJobs(files) {
     const jobs = Array.from(files, (f) => (f instanceof File ? { file: f } : f))
-      .map(({ file, title, description, programId, categoryId }) => ({
-        file,
-        name: file.name,
-        title: title || file.name,
-        description,
-        programId,
-        categoryId,
-        status: 'pending',        // pending → uploading → creating-media → creating-video → completed | failed
-        progress: { percent: 0 },
-        media: null, video: null,
-      }));
+      .map(({ file, ...meta }) => {
+        assertPublishable(meta);  // fail here, not after the file has gone up
+        return {
+          ...meta,
+          file,
+          name: file.name,
+          title: meta.title || file.name,
+          status: 'pending',      // pending → uploading → creating-media → creating-video → completed | failed
+          progress: { percent: 0 },
+          media: null, video: null,
+        };
+      });
     this.jobQueue.push(...jobs);
     return jobs;
   }
@@ -123,11 +125,13 @@ export class CmsTwoSdk {
           job.media = await createMediaVideo(cms, { videoKey, file: job.file });
 
           job.status = 'creating-video'; cb.onStatus?.(job, 'creating-video');
-          job.video = await createVideo(cms, {
-            media: job.media,
-            title: job.title, tagline: job.description, programId: job.programId,
-            categoryId: job.categoryId,
-          });
+          // Everything on the job that isn't upload bookkeeping is video metadata.
+          const { file, name, status, progress, media, video, description, images, ...meta } = job;
+          job.video = await createVideo(cms, { ...meta, media: job.media, tagline: description });
+          if (images?.length) {                  // create can't carry images — attach them after
+            cb.onStatus?.(job, 'attaching-images');
+            job.video = await updateVideo(cms, job.video.id, { images });
+          }
 
           job.status = 'completed';
           createdVideoIds.push(job.video.id);
@@ -145,16 +149,14 @@ export class CmsTwoSdk {
 
   // Starts the upload and returns a job handle: attach .onProgress/.onStatus, await it for the
   // created records, or await .whenReady() for the playable video.
-  upload(file, { title, description, programId, categoryId } = {}) {
+  upload(file, meta = {}) {
     const listeners = { progress: [], status: [] };
 
     // Start on a microtask so listeners attached right after this call still see every event.
     const done = Promise.resolve().then(() => uploadVideo({
+      ...meta,
       file,
-      title: title || file.name,
-      description,
-      programId,
-      categoryId,
+      title: meta.title || file.name,
       byteark: this.byteark,
       cms: this.cms,
       onProgress: (pct) => listeners.progress.forEach((fn) => fn(pct)),
@@ -206,27 +208,34 @@ export class CmsTwoSdk {
     return listVideoTerms(this.cms, fieldName, options);
   }
 
-  // Update a video's editable fields (title, programId, categoryId). Fetches the current record
-  // and PUTs it back with your overrides; unspecified fields are preserved. programId / categoryId
-  // '' or null clears that link. categoryId is a termId — see listVideoTerms('video-category').
-  updateVideo(videoId, { title, programId, categoryId } = {}) {
-    return updateVideo(this.cms, videoId, { title, programId, categoryId });
+  // Upload an image into the team's media library; hand the result to upload()/updateVideo() as
+  // `images: [image]`.
+  uploadImage(file, options = {}) {
+    return uploadImage(this.cms, file, options);
+  }
+
+  // Update a video's fields: fetches the current record and PUTs it back with your overrides, so
+  // unspecified fields are preserved and '' clears one. See updateVideo() for what the patch takes.
+  updateVideo(videoId, patch = {}) {
+    return updateVideo(this.cms, videoId, patch);
   }
 }
 
 // ── the underlying one-shot function (CmsTwoSdk.upload wraps this) ───────────────────
 export async function uploadVideo({
-  file, title, description, programId, categoryId,
+  file, title, description, images,
   byteark,                     // { formId, formSecret, projectKey }
   cms: cmsOptions,             // { baseUrl, accessId, secret, log? }  — or an already-built context
   onProgress = () => {},
   onStatus = () => {},
+  ...meta                      // any other video metadata createVideo takes
 }) {
   // Accept either raw options or a prepared context (CmsTwoSdk passes its cached context).
   const cms = cmsOptions && cmsOptions.__cmsContext ? cmsOptions : makeCmsContext(cmsOptions);
 
-  // 0) validate the credential first — mint the accessToken BEFORE the ByteArk upload, so a
-  // bad accessId/secret throws here and never creates an orphaned video in the stream.
+  // 0) validate the credential and the metadata first — both BEFORE the ByteArk upload, so a bad
+  // accessId/secret or a half-specified publish never leaves an orphaned video in the stream.
+  assertPublishable(meta);
   await getAuth(cms);
 
   // 1) upload the file to the media service (videoKey is the raw ByteArk key — used only internally)
@@ -237,9 +246,15 @@ export async function uploadVideo({
   onStatus('creating-media');
   const media = await createMediaVideo(cms, { videoKey, file });
 
-  // 3) create the Video record with the metadata (title / description / program)
+  // 3) create the Video record with the metadata (title / description / program / …)
   onStatus('creating-video');
-  const video = await createVideo(cms, { media, title, tagline: description, programId, categoryId });
+  let video = await createVideo(cms, { ...meta, media, title, tagline: description });
+
+  // 4) images can't ride along on a create, so attach them with an update
+  if (images?.length) {
+    onStatus('attaching-images');
+    video = await updateVideo(cms, video.id, { images });
+  }
 
   onStatus('done');
   return { media, video };
@@ -366,12 +381,13 @@ async function authedWrite(cms, method, path, makeBody) {
     cms.log?.(method + ' /api/v1' + path + ' →');
     const body = makeBody(auth.teamId);
     cms.log?.(body);
+    const isForm = body instanceof FormData;   // image uploads go up as multipart
     return fetch(cms.baseUrl + '/api/v1' + path, {
       method,
       // Custom header (not Authorization) so the API gateway doesn't intercept it as a
-      // Zitadel bearer before it reaches the CMS.
-      headers: { 'content-type': 'application/json', 'x-upload-token': auth.accessToken },
-      body: JSON.stringify(body),
+      // Zitadel bearer before it reaches the CMS. FormData sets its own content-type.
+      headers: { ...(isForm ? {} : { 'content-type': 'application/json' }), 'x-upload-token': auth.accessToken },
+      body: isForm ? body : JSON.stringify(body),
     });
   };
 
@@ -442,8 +458,9 @@ export async function createMediaVideo(cms, { videoKey, file }) {
 // Create the Video record from that media-video. The video item is the media's data
 // + metaInfo; passing media.id links the two (so the webhook's status also reaches the video).
 // `categoryId` is a video-category termId; the create endpoint takes terms as internalRelatedTerms
-// (it ignores metaInfo.termIds), so it goes in with the same request.
-export async function createVideo(cms, { media, title, tagline, programId, categoryId }) {
+// (it ignores metaInfo.termIds), so it goes in with the same request. Images are the one thing the
+// create body can't carry — it always stores images: [] — so callers attach those with updateVideo.
+export async function createVideo(cms, { media, title, tagline, programId, categoryId, publishStatus, publishedAt, ...meta }) {
   const json = await authedWrite(cms, 'POST', '/videos', (teamId) => ({
     teamId,
     videos: [{
@@ -467,14 +484,30 @@ export async function createVideo(cms, { media, title, tagline, programId, categ
       createdAt: media.createdAt,
       updatedAt: media.updatedAt,
       metaInfo: {
+        ...meta,                                 // firstAiredAt, seoTitle, … — the CMS reads them here
         title,
         tagline,                                 // description is stored as `tagline`
-        ...(programId ? { programId } : {}),
+        programId: programId || null,
+        ...publishFields(publishStatus, publishedAt),
       },
       ...(categoryId ? { internalRelatedTerms: [{ key: CATEGORY_FIELD, docId: categoryId }] } : {}),
     }],
   }));
   return json.videos[0];
+}
+
+// Upload an image to the team's media library (multipart POST /media/files — the same endpoint and
+// permission as the video media). Hand the result to createVideo/updateVideo as `images: [image]`.
+export function uploadImage(cms, file, { parentFolderId = '' } = {}) {
+  return authedWrite(cms, 'POST', '/media/files', (teamId) => {
+    const form = new FormData();
+    form.append('type', 'image');
+    form.append('teamId', teamId);
+    // Required by the multipart schema even at the library root — empty coerces to null there.
+    form.append('parentFolderId', parentFolderId);
+    form.append('file', file, file.name);
+    return form;
+  });
 }
 
 // Look up a video by its id (poll until video.mediaVideo.mediaVideoStatus is 'completed').
@@ -483,11 +516,13 @@ export function getVideoById(cms, videoId) {
   return publicGet(cms, '/videos/' + videoId);
 }
 
-// Update an existing video's editable fields (title, programId, categoryId). The CMS update is a
-// full PUT, so we fetch the current video, override the given fields, and send the whole record
-// back — everything you don't pass is preserved. Only fields present in the patch are changed.
-// Pass programId / categoryId '' (or null) to clear it; categoryId is a video-category termId.
-export async function updateVideo(cms, videoId, { title, programId, categoryId } = {}) {
+// Update an existing video. The CMS update is a full PUT, so we fetch the current video, override
+// the fields you pass and send the whole record back — everything else is preserved. The patch
+// takes anything the CMS video body holds (title, programId, firstAiredAt, seoTitle, …) plus the
+// three the SDK translates: categoryId (a video-category termId), publishStatus/publishedAt, and
+// images (records from uploadImage). Pass '' to clear a field.
+export async function updateVideo(cms, videoId, { categoryId, publishStatus, publishedAt, images, ...patch } = {}) {
+  assertPublishable({ publishStatus, publishedAt });   // before the round-trips, not during them
   // Both GETs are public and independent. The spec bridges term names: the update body keys terms
   // by reqBodyFieldName (e.g. "tagIds") but the GET returns them under resBodyFieldName ("tags"),
   // so without it the PUT would clear the terms.
@@ -500,8 +535,10 @@ export async function updateVideo(cms, videoId, { title, programId, categoryId }
   else if (categoryId !== undefined) delete termIds[CATEGORY_FIELD];
   return authedWrite(cms, 'PUT', '/videos/' + videoId, () => ({
     ...current,
-    ...(title !== undefined ? { title } : {}),
-    ...(programId !== undefined ? { programId: programId || null } : {}),
+    // '' clears a field (the CMS stores null); everything else goes through as given.
+    ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, v === '' ? null : v])),
+    ...publishFields(publishStatus, publishedAt),
+    ...(images !== undefined ? { images: images.map(toEmbeddedImage) } : {}),
     termIds,
   }));
 }
@@ -514,6 +551,27 @@ export async function updateVideo(cms, videoId, { title, programId, categoryId }
 // are equal for video-category but NOT for others (tags: key 'tag', reqBodyFieldName 'tagIds'), so
 // this one constant only stands in for both here.
 const CATEGORY_FIELD = 'video-category';
+
+// A 'scheduled' video with no publishedAt is a state the CMS accepts and never resolves — it just
+// sits there. Checked at the entry points, before anything goes up.
+function assertPublishable({ publishStatus, publishedAt } = {}) {
+  if (publishStatus === 'scheduled' && !publishedAt) {
+    throw sdkError('cms', "publishStatus 'scheduled' needs a publishedAt (when it should go live).");
+  }
+}
+
+// publishStatus 'draft' | 'published' | 'scheduled'. publishType rides along because the CMS reads
+// both. publishedAt is when it goes live: required for 'scheduled'; on an update the CMS fills in
+// now for a 'published' without one (and clears it for a draft), but a create stores it as null.
+const publishFields = (publishStatus, publishedAt) => {
+  assertPublishable({ publishStatus, publishedAt });
+  return (publishStatus
+    ? { publishStatus, publishType: publishStatus, ...(publishedAt !== undefined ? { publishedAt: publishedAt || null } : {}) }
+    : {});
+};
+
+// A video's `images` entries are media records; `useFor` says where the CMS shows them.
+const toEmbeddedImage = (image) => ({ ...image, type: 'image', useFor: 'display' });
 
 // Fetch (and cache) the video's term-field specs. Public endpoint, no token. The *promise* is
 // cached, so concurrent first-callers share one request instead of each firing their own.
